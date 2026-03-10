@@ -1,26 +1,207 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #110e08;
+  --foreground: #f5e6d0;
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --font-display: var(--font-playfair);
+
+  /* Shelf palette */
+  --shelf-bg: #1a1208;
+  --shelf-bg-warm: #1e1610;
+  --cabinet-border: #3d2e1a;
+  --cabinet-inner: #231a0e;
+  --cabinet-highlight: #4a3823;
+  --wood-light: #a07a52;
+  --wood-mid: #8b5e3c;
+  --wood-dark: #6b4226;
+  --wood-edge: #4a2a18;
+  --gold-accent: #d4a54a;
+  --gold-dim: #b8923e;
+  --amber-glow: rgba(212, 165, 74, 0.15);
+  --slot-bg: rgba(30, 22, 14, 0.6);
+  --slot-border: rgba(74, 56, 35, 0.45);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), system-ui, sans-serif;
+  overflow-x: hidden;
+}
+
+/* ─── Page Backdrop ─────────────────────────────────────────────────────── */
+
+.shelf-backdrop {
+  background:
+    radial-gradient(ellipse 80% 50% at 50% 20%, rgba(42, 30, 16, 0.9) 0%, transparent 70%),
+    radial-gradient(ellipse 100% 100% at 50% 100%, rgba(10, 8, 4, 0.95) 0%, transparent 60%),
+    var(--shelf-bg);
+  min-height: 100dvh;
+}
+
+/* ─── Cabinet Frame ─────────────────────────────────────────────────────── */
+
+.cabinet-frame {
+  border: 2px solid var(--cabinet-border);
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, rgba(35, 26, 14, 0.95) 0%, rgba(26, 18, 8, 0.98) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 215, 120, 0.06),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.3),
+    0 4px 24px rgba(0, 0, 0, 0.5),
+    0 1px 3px rgba(0, 0, 0, 0.3);
+  position: relative;
+}
+
+/* Top edge highlight */
+.cabinet-frame::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 10%;
+  right: 10%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(212, 165, 74, 0.2), transparent);
+  z-index: 1;
+  pointer-events: none;
+}
+
+/* Ambient overhead light glow */
+.cabinet-frame::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 90px;
+  background: radial-gradient(ellipse 65% 100% at 50% 0%, rgba(212, 165, 74, 0.035) 0%, transparent 100%);
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* ─── Shelf Planks ──────────────────────────────────────────────────────── */
+
+.shelf-plank {
+  background: linear-gradient(180deg, #a0724e 0%, #8b5e3c 35%, #7a4f30 70%, #6b4226 100%);
+  box-shadow:
+    0 3px 6px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.2);
+  position: relative;
+}
+
+/* Subtle wood grain */
+.shelf-plank::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    90deg,
+    transparent,
+    transparent 8px,
+    rgba(0, 0, 0, 0.03) 8px,
+    rgba(0, 0, 0, 0.03) 9px
+  );
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.shelf-edge {
+  background: linear-gradient(180deg, #5a3520 0%, #4a2a18 100%);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+/* ─── Empty Slots ───────────────────────────────────────────────────────── */
+
+.empty-slot {
+  background: var(--slot-bg);
+  border: 1.5px dashed var(--slot-border);
+  border-radius: 5px;
+  position: relative;
+  transition: border-color 0.2s, background 0.2s, opacity 0.2s;
+}
+
+/* Ghost can silhouette inside empty slot */
+.empty-slot::after {
+  content: "";
+  position: absolute;
+  bottom: 12%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 42%;
+  height: 52%;
+  border-radius: 2px 2px 0 0;
+  background: rgba(74, 56, 35, 0.12);
+  mask-image: linear-gradient(to top, rgba(0,0,0,0.25) 0%, rgba(0,0,0,0.04) 100%);
+  -webkit-mask-image: linear-gradient(to top, rgba(0,0,0,0.25) 0%, rgba(0,0,0,0.04) 100%);
+  pointer-events: none;
+}
+
+/* Rows with no beers — dimmer empty slots */
+.empty-slot.ghost-row {
+  opacity: 0.45;
+}
+
+/* DnD drop target highlight */
+.empty-slot.drop-target {
+  border-color: var(--gold-accent);
+  background: var(--amber-glow);
+  border-style: solid;
+  opacity: 1;
+}
+
+/* ─── Can Hover + Tilt ──────────────────────────────────────────────────── */
+
+.beer-can-slot {
+  transform: rotate(var(--can-tilt, 0deg));
+  transition: filter 0.2s ease, transform 0.2s ease;
+  cursor: grab;
+  will-change: filter, transform;
+}
+
+.beer-can-slot:hover {
+  filter: drop-shadow(0 0 8px rgba(212, 165, 74, 0.35))
+         drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+  transform: rotate(var(--can-tilt, 0deg)) translateY(-2px);
+}
+
+.beer-can-slot:active {
+  cursor: grabbing;
+}
+
+.beer-can-slot.dragging {
+  opacity: 0.4;
+  cursor: grabbing;
+}
+
+/* ─── Header ────────────────────────────────────────────────────────────── */
+
+.shelf-title {
+  font-family: var(--font-display), Georgia, serif;
+  letter-spacing: 0.02em;
+  color: var(--gold-accent);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
+/* ─── Scrollbar ─────────────────────────────────────────────────────────── */
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--cabinet-inner);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--cabinet-border);
+  border-radius: 3px;
 }

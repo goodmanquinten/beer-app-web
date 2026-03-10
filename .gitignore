@@ -36,6 +36,14 @@ yarn-error.log*
 # vercel
 .vercel
 
+# generated renders (user-specific)
+public/renders/
+
+# OCR training data
+*.traineddata
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+.vercel
