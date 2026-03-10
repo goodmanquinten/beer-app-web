@@ -54,45 +54,41 @@ function getLayoutConfig(beerCount: number, containerWidth: number): LayoutConfi
   let canHeight: number;
   let gap: number;
 
+  // Always at least 3 cols — never drop to 2, it looks too sparse
   if (beerCount === 0) {
-    cols = narrow ? 2 : 3;
-    canHeight = 86;
-    gap = 6;
-  } else if (beerCount <= 2) {
-    cols = 2;
-    canHeight = narrow ? 98 : 116;
-    gap = 14;
-  } else if (beerCount <= 4) {
-    cols = 2;
-    canHeight = narrow ? 90 : 104;
-    gap = 10;
+    cols = 3;
+    canHeight = 82;
+    gap = 4;
+  } else if (beerCount <= 3) {
+    cols = 3;
+    canHeight = narrow ? 82 : 92;
+    gap = 4;
   } else if (beerCount <= 6) {
     cols = 3;
-    canHeight = narrow ? 78 : 90;
-    gap = 6;
+    canHeight = narrow ? 78 : 86;
+    gap = 4;
   } else if (beerCount <= 9) {
-    cols = 3;
-    canHeight = narrow ? 74 : 82;
-    gap = 5;
+    cols = narrow ? 3 : 3;
+    canHeight = narrow ? 74 : 80;
+    gap = 3;
   } else if (beerCount <= 15) {
     cols = narrow ? 3 : 4;
     canHeight = narrow ? 74 : 72;
-    gap = 4;
+    gap = 3;
   } else {
     cols = narrow ? 4 : 5;
     canHeight = narrow ? 64 : 62;
-    gap = 3;
+    gap = 2;
   }
 
-  // Rows: enough for all beers + 1 extra row for breathing / drop targets
   const neededRows = beerCount === 0
     ? 3
     : Math.ceil(beerCount / cols) + 1;
   const minRows = Math.max(2, neededRows);
 
-  // Derived slot dimensions — tight but with a little breathing room
-  const slotWidth = Math.round(canHeight * 0.54) + 8;
-  const slotHeight = canHeight + 10;
+  // Tight slot dimensions — cans should nearly fill the slot
+  const slotWidth = Math.round(canHeight * 0.54) + 6;
+  const slotHeight = canHeight + 4;
   const emptyWidth = Math.round(slotWidth * 0.68);
   const emptyHeight = Math.round(slotHeight * 0.56);
 
@@ -295,7 +291,7 @@ export default function BeerShelf({
                     gridTemplateColumns: `repeat(${config.cols}, ${config.slotWidth}px)`,
                     justifyContent: "center",
                     gap: `0 ${config.gap}px`,
-                    marginBottom: -3,
+                    marginBottom: -6,
                   }}
                 >
                   {row.map((slot) => (
