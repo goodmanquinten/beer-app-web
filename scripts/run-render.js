@@ -38,6 +38,20 @@ async function main() {
   const publicPath = path.resolve(__dirname, "..", "public", "renders", `${beerId}.png`);
   fs.copyFileSync(best.render_png, publicPath);
 
+  // Trim transparent padding so the can fills the image
+  try {
+    const sharp = require("sharp");
+    const trimmed = await sharp(publicPath).trim({ threshold: 10 }).toBuffer();
+    const margin = 20; // small breathing room
+    const extended = await sharp(trimmed)
+      .extend({ top: margin, bottom: margin, left: margin, right: margin, background: { r: 0, g: 0, b: 0, alpha: 0 } })
+      .png()
+      .toBuffer();
+    fs.writeFileSync(publicPath, extended);
+  } catch (trimErr) {
+    process.stderr.write("Trim warning: " + trimErr.message + "\n");
+  }
+
   origLog(JSON.stringify({ renderUrl: `/renders/${beerId}.png` }));
 }
 

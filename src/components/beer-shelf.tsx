@@ -36,16 +36,19 @@ type SlotItem =
 
 interface LayoutConfig {
   cols: number;
+  /** Height of the can image in px */
   canHeight: number;
-  gap: number;
-  minRows: number;
+  /** Width of each grid column in px */
   slotWidth: number;
-  slotHeight: number;
-  emptyWidth: number;
-  emptyHeight: number;
+  /** Column gap in px */
+  gap: number;
+  /** Minimum shelf rows to show */
+  minRows: number;
 }
 
-// ─── Adaptive Layout Engine ──────────────────────────────────────────────────
+// ─── Adaptive Layout ─────────────────────────────────────────────────────────
+// The can renders are ~2:3 aspect ratio (width:height) after trimming.
+// canWidth ≈ canHeight * 0.67
 
 function getLayoutConfig(beerCount: number, containerWidth: number): LayoutConfig {
   const narrow = containerWidth > 0 && containerWidth < 340;
@@ -54,30 +57,29 @@ function getLayoutConfig(beerCount: number, containerWidth: number): LayoutConfi
   let canHeight: number;
   let gap: number;
 
-  // Always at least 3 cols — never drop to 2, it looks too sparse
   if (beerCount === 0) {
     cols = 3;
-    canHeight = 82;
+    canHeight = 88;
     gap = 4;
   } else if (beerCount <= 3) {
     cols = 3;
-    canHeight = narrow ? 82 : 92;
+    canHeight = narrow ? 88 : 100;
     gap = 4;
   } else if (beerCount <= 6) {
     cols = 3;
-    canHeight = narrow ? 78 : 86;
+    canHeight = narrow ? 82 : 92;
     gap = 4;
   } else if (beerCount <= 9) {
-    cols = narrow ? 3 : 3;
-    canHeight = narrow ? 74 : 80;
+    cols = 3;
+    canHeight = narrow ? 76 : 84;
     gap = 3;
   } else if (beerCount <= 15) {
     cols = narrow ? 3 : 4;
-    canHeight = narrow ? 74 : 72;
+    canHeight = narrow ? 76 : 76;
     gap = 3;
   } else {
     cols = narrow ? 4 : 5;
-    canHeight = narrow ? 64 : 62;
+    canHeight = narrow ? 66 : 66;
     gap = 2;
   }
 
@@ -86,27 +88,29 @@ function getLayoutConfig(beerCount: number, containerWidth: number): LayoutConfi
     : Math.ceil(beerCount / cols) + 1;
   const minRows = Math.max(2, neededRows);
 
-  // Tight slot dimensions — cans should nearly fill the slot
-  const slotWidth = Math.round(canHeight * 0.54) + 6;
-  const slotHeight = canHeight + 4;
-  const emptyWidth = Math.round(slotWidth * 0.68);
-  const emptyHeight = Math.round(slotHeight * 0.56);
+  // Slot width: can width + tight padding
+  // Can aspect ≈ 0.67 width:height after trim
+  const canWidth = Math.round(canHeight * 0.67);
+  const slotWidth = canWidth + 6;
 
-  return { cols, canHeight, gap, minRows, slotWidth, slotHeight, emptyWidth, emptyHeight };
+  return { cols, canHeight, slotWidth, gap, minRows };
 }
+
+// ─── Shelf geometry constants ────────────────────────────────────────────────
+
+const SHELF_PLANK_H = 10;
+const SHELF_OVERLAP = 8; // how far cans extend below shelf-plank top
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-/** Deterministic pseudo-random tilt from beer id */
 function getTilt(id: string): number {
   let hash = 0;
   for (let i = 0; i < id.length; i++) {
     hash = ((hash << 5) - hash + id.charCodeAt(i)) | 0;
   }
-  return ((hash % 5) - 2) * 0.7; // -1.4 to 1.4 degrees
+  return ((hash % 5) - 2) * 0.7;
 }
 
-/** Deduplicate entries into unique beers */
 function deduplicateBeers(entries: BeerEntry[]) {
   const beerMap = new Map<string, { beer: Beer; entries: BeerEntry[] }>();
   for (const entry of entries) {
@@ -121,7 +125,6 @@ function deduplicateBeers(entries: BeerEntry[]) {
   return beerMap;
 }
 
-/** Build slot grid from entries + optional arrangement */
 function buildSlots(
   entries: BeerEntry[],
   arrangement: string[] | undefined,
@@ -142,7 +145,6 @@ function buildSlots(
 
   const totalSlots = config.minRows * config.cols;
   const slots: SlotItem[] = [];
-
   for (let i = 0; i < totalSlots; i++) {
     if (i < orderedBeerIds.length) {
       const beerId = orderedBeerIds[i];
@@ -152,7 +154,6 @@ function buildSlots(
       slots.push({ id: `empty-${i}`, type: "empty" });
     }
   }
-
   return slots;
 }
 
@@ -160,15 +161,12 @@ function buildSlots(
 
 function useContainerWidth() {
   const ref = useRef<HTMLDivElement>(null);
-  const [width, setWidth] = useState(460); // sensible default for max-w-lg
+  const [width, setWidth] = useState(460);
 
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-
-    // Measure immediately
     setWidth(el.clientWidth);
-
     const ro = new ResizeObserver((entries) => {
       const w = entries[0]?.contentRect.width;
       if (w && w > 0) setWidth(w);
@@ -189,7 +187,6 @@ export default function BeerShelf({
   onArrangementChange,
 }: BeerShelfProps) {
   const { ref: containerRef, width: containerWidth } = useContainerWidth();
-
   const beerCount = useMemo(() => deduplicateBeers(entries).size, [entries]);
   const config = useMemo(
     () => getLayoutConfig(beerCount, containerWidth),
@@ -208,7 +205,6 @@ export default function BeerShelf({
     useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } }),
   );
 
-  // Build rows
   const rows: SlotItem[][] = [];
   for (let i = 0; i < slots.length; i += config.cols) {
     rows.push(slots.slice(i, i + config.cols));
@@ -218,18 +214,13 @@ export default function BeerShelf({
     ? slots.find((s) => s.id === activeId && s.type === "beer")
     : null;
 
-  function handleDragStart(event: DragStartEvent) {
-    setActiveId(event.active.id as string);
-  }
-
-  function handleDragOver(event: DragOverEvent) {
-    setOverId(event.over ? (event.over.id as string) : null);
-  }
+  function handleDragStart(e: DragStartEvent) { setActiveId(e.active.id as string); }
+  function handleDragOver(e: DragOverEvent) { setOverId(e.over ? (e.over.id as string) : null); }
+  function handleDragCancel() { setActiveId(null); setOverId(null); }
 
   function handleDragEnd(event: DragEndEvent) {
     setActiveId(null);
     setOverId(null);
-
     const { active, over } = event;
     if (!over || active.id === over.id) return;
 
@@ -244,29 +235,31 @@ export default function BeerShelf({
     if (activeSlot.type !== "beer") return;
 
     if (overSlot.type === "empty") {
-      const currentBeerIdx = beerIds.indexOf(activeSlot.id);
-      if (currentBeerIdx === -1) return;
+      const idx = beerIds.indexOf(activeSlot.id);
+      if (idx === -1) return;
       const newIds = [...beerIds];
-      newIds.splice(currentBeerIdx, 1);
-      const insertIdx = Math.min(overIdx, newIds.length);
-      newIds.splice(insertIdx, 0, activeSlot.id);
+      newIds.splice(idx, 1);
+      newIds.splice(Math.min(overIdx, newIds.length), 0, activeSlot.id);
       onArrangementChange?.(newIds);
     } else {
-      const fromIdx = beerIds.indexOf(active.id as string);
-      const toIdx = beerIds.indexOf(over.id as string);
-      if (fromIdx === -1 || toIdx === -1) return;
+      const from = beerIds.indexOf(active.id as string);
+      const to = beerIds.indexOf(over.id as string);
+      if (from === -1 || to === -1) return;
       const newIds = [...beerIds];
-      [newIds[fromIdx], newIds[toIdx]] = [newIds[toIdx], newIds[fromIdx]];
+      [newIds[from], newIds[to]] = [newIds[to], newIds[from]];
       onArrangementChange?.(newIds);
     }
   }
 
-  function handleDragCancel() {
-    setActiveId(null);
-    setOverId(null);
-  }
+  // The slot height determines the row height.
+  // Cans sit at the bottom of their slot. The shelf-plank overlaps
+  // the bottom SHELF_OVERLAP px of the slot area via negative margin-top.
+  // This makes cans appear to sit ON the shelf.
+  const slotHeight = config.canHeight + 4;
 
-  const slotIds = slots.map((s) => s.id);
+  // Empty slot visual dimensions (smaller, proportional)
+  const emptyW = Math.round(config.slotWidth * 0.65);
+  const emptyH = Math.round(slotHeight * 0.45);
 
   return (
     <DndContext
@@ -277,28 +270,29 @@ export default function BeerShelf({
       onDragEnd={handleDragEnd}
       onDragCancel={handleDragCancel}
     >
-      <SortableContext items={slotIds} strategy={rectSortingStrategy}>
+      <SortableContext items={slots.map((s) => s.id)} strategy={rectSortingStrategy}>
         <div ref={containerRef}>
           {rows.map((row, rowIdx) => {
             const hasAnyBeer = row.some((s) => s.type === "beer");
-
             return (
               <div key={rowIdx} className="relative overflow-visible">
-                {/* Slot grid — centered, tight columns */}
+                {/* Can grid */}
                 <div
-                  className="grid overflow-visible relative z-20 mx-auto"
+                  className="grid relative z-20"
                   style={{
                     gridTemplateColumns: `repeat(${config.cols}, ${config.slotWidth}px)`,
                     justifyContent: "center",
-                    gap: `0 ${config.gap}px`,
-                    marginBottom: -6,
+                    columnGap: config.gap,
                   }}
                 >
                   {row.map((slot) => (
                     <ShelfSlot
                       key={slot.id}
                       slot={slot}
-                      config={config}
+                      slotHeight={slotHeight}
+                      canHeight={config.canHeight}
+                      emptyW={emptyW}
+                      emptyH={emptyH}
                       isActive={activeId === slot.id}
                       isOver={overId === slot.id}
                       isGhostRow={!hasAnyBeer}
@@ -307,17 +301,17 @@ export default function BeerShelf({
                   ))}
                 </div>
 
-                {/* Wooden shelf plank — always full width */}
+                {/* Shelf plank — pulls UP into the can area */}
                 <div
                   className="shelf-plank relative z-10"
                   style={{
-                    height: Math.max(8, Math.round(config.canHeight * 0.085)),
+                    height: SHELF_PLANK_H,
+                    marginTop: -SHELF_OVERLAP,
                     marginLeft: 4,
                     marginRight: 4,
                     borderRadius: "0 0 3px 3px",
                   }}
                 />
-                {/* Shelf edge */}
                 <div
                   className="shelf-edge"
                   style={{
@@ -327,7 +321,6 @@ export default function BeerShelf({
                     borderRadius: "0 0 2px 2px",
                   }}
                 />
-                {/* Contact shadow */}
                 <div
                   style={{
                     height: 5,
@@ -343,10 +336,9 @@ export default function BeerShelf({
         </div>
       </SortableContext>
 
-      {/* Drag overlay ghost */}
       <DragOverlay dropAnimation={null}>
         {activeBeer && activeBeer.type === "beer" ? (
-          <div className="opacity-90" style={{ transform: "scale(1.05)" }}>
+          <div style={{ opacity: 0.9, transform: "scale(1.05)" }}>
             <BeerImage beer={activeBeer.beer} canHeight={config.canHeight} />
           </div>
         ) : null}
@@ -359,46 +351,45 @@ export default function BeerShelf({
 
 function ShelfSlot({
   slot,
-  config,
+  slotHeight,
+  canHeight,
+  emptyW,
+  emptyH,
   isActive,
   isOver,
   isGhostRow,
   onSelectBeer,
 }: {
   slot: SlotItem;
-  config: LayoutConfig;
+  slotHeight: number;
+  canHeight: number;
+  emptyW: number;
+  emptyH: number;
   isActive: boolean;
   isOver: boolean;
   isGhostRow: boolean;
   onSelectBeer: (beer: Beer, entries: BeerEntry[]) => void;
 }) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-  } = useSortable({ id: slot.id });
+  const { attributes, listeners, setNodeRef, transform, transition } =
+    useSortable({ id: slot.id });
 
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
+    height: slotHeight,
   };
 
   if (slot.type === "empty") {
     return (
       <div
         ref={setNodeRef}
-        style={{ ...style, height: config.slotHeight }}
+        style={style}
         className="flex items-end justify-center overflow-visible"
         {...attributes}
       >
         <div
           className={`empty-slot ${isOver ? "drop-target" : ""} ${isGhostRow ? "ghost-row" : ""}`}
-          style={{
-            width: config.emptyWidth,
-            height: config.emptyHeight,
-          }}
+          style={{ width: emptyW, height: emptyH, marginBottom: SHELF_OVERLAP + 2 }}
         />
       </div>
     );
@@ -409,7 +400,7 @@ function ShelfSlot({
   return (
     <div
       ref={setNodeRef}
-      style={{ ...style, height: config.slotHeight }}
+      style={style}
       className="flex items-end justify-center overflow-visible"
       {...attributes}
     >
@@ -419,7 +410,7 @@ function ShelfSlot({
         {...listeners}
         onClick={() => onSelectBeer(slot.beer, slot.entries)}
       >
-        <BeerImage beer={slot.beer} canHeight={config.canHeight} />
+        <BeerImage beer={slot.beer} canHeight={canHeight} />
       </div>
     </div>
   );
@@ -443,30 +434,27 @@ function BeerImage({ beer, canHeight }: { beer: Beer; canHeight: number }) {
 
   const src = beer.image_url || `${renderSrc}?v=${retryCount}`;
 
-  // Scale fallback badge proportionally
-  const badgeWidth = Math.round(canHeight * 0.38);
-  const badgeHeight = Math.round(canHeight * 0.58);
-  const fontSize = canHeight >= 100 ? 10 : canHeight >= 76 ? 9 : 8;
+  const badgeW = Math.round(canHeight * 0.45);
+  const badgeH = Math.round(canHeight * 0.7);
+  const fontSize = canHeight >= 96 ? 10 : canHeight >= 76 ? 9 : 8;
 
   if (failed) {
     return (
-      <div className="flex items-center justify-center">
-        <div
-          className="rounded-sm flex items-center justify-center"
-          style={{
-            width: badgeWidth,
-            height: badgeHeight,
-            background: "linear-gradient(180deg, #c4873a 0%, #a06830 50%, #7a4f25 100%)",
-            boxShadow: "0 2px 6px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.15)",
-          }}
+      <div
+        className="rounded-sm flex items-center justify-center"
+        style={{
+          width: badgeW,
+          height: badgeH,
+          background: "linear-gradient(180deg, #c4873a 0%, #a06830 50%, #7a4f25 100%)",
+          boxShadow: "0 2px 6px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.15)",
+        }}
+      >
+        <span
+          className="text-white/90 font-bold text-center leading-tight px-0.5 overflow-hidden"
+          style={{ fontSize }}
         >
-          <span
-            className="text-white/90 font-bold text-center leading-tight px-0.5 overflow-hidden"
-            style={{ fontSize }}
-          >
-            {beer.name.slice(0, 14)}
-          </span>
-        </div>
+          {beer.name.slice(0, 14)}
+        </span>
       </div>
     );
   }
@@ -476,10 +464,11 @@ function BeerImage({ beer, canHeight }: { beer: Beer; canHeight: number }) {
     <img
       src={src}
       alt={beer.name}
-      className="object-contain block pointer-events-none"
+      className="block pointer-events-none"
       style={{
         height: canHeight,
         width: "auto",
+        objectFit: "contain",
         filter: "drop-shadow(1px 3px 4px rgba(0,0,0,0.5))",
       }}
       onError={() => setFailed(true)}

@@ -36,8 +36,8 @@ yarn-error.log*
 # vercel
 .vercel
 
-# generated renders (user-specific)
-public/renders/
+# generated renders — tracked so they deploy to Vercel
+# public/renders/
 
 # OCR training data
 *.traineddata
