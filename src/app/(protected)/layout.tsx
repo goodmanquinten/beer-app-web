@@ -1,11 +1,14 @@
+import BottomNav from "@/components/bottom-nav";
+
 export default function ProtectedLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
   return (
-    <div className="min-h-screen bg-gray-50">
-      {children}
+    <div className="min-h-screen" style={{ background: "var(--background)" }}>
+      <div className="pb-16">{children}</div>
+      <BottomNav />
     </div>
   );
 }

@@ -59,27 +59,27 @@ function getLayoutConfig(beerCount: number, containerWidth: number): LayoutConfi
 
   if (beerCount === 0) {
     cols = 3;
-    canHeight = 88;
+    canHeight = 176;
     gap = 4;
   } else if (beerCount <= 3) {
     cols = 3;
-    canHeight = narrow ? 88 : 100;
+    canHeight = narrow ? 176 : 200;
     gap = 4;
   } else if (beerCount <= 6) {
     cols = 3;
-    canHeight = narrow ? 82 : 92;
+    canHeight = narrow ? 164 : 184;
     gap = 4;
   } else if (beerCount <= 9) {
     cols = 3;
-    canHeight = narrow ? 76 : 84;
+    canHeight = narrow ? 152 : 168;
     gap = 3;
   } else if (beerCount <= 15) {
     cols = narrow ? 3 : 4;
-    canHeight = narrow ? 76 : 76;
+    canHeight = narrow ? 152 : 152;
     gap = 3;
   } else {
     cols = narrow ? 4 : 5;
-    canHeight = narrow ? 66 : 66;
+    canHeight = narrow ? 132 : 132;
     gap = 2;
   }
 
@@ -275,7 +275,7 @@ export default function BeerShelf({
           {rows.map((row, rowIdx) => {
             const hasAnyBeer = row.some((s) => s.type === "beer");
             return (
-              <div key={rowIdx} className="relative overflow-visible">
+              <div key={rowIdx} className="relative overflow-visible" style={{ marginBottom: 18 }}>
                 {/* Can grid */}
                 <div
                   className="grid relative z-20"

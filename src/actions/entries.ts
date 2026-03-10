@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { createBeerLoggedActivity, createBeerRatedActivity, checkAndCreateMilestone } from "@/actions/activities";
 
 export async function createEntry(beerId: string, notes?: string, location?: string) {
   const supabase = await createClient();
@@ -22,6 +23,19 @@ export async function createEntry(beerId: string, notes?: string, location?: str
     .single();
 
   if (error) return { error: error.message };
+
+  // Create activity and check milestones (fire and forget)
+  const { data: beer } = await supabase
+    .from("beers")
+    .select("name, brewery")
+    .eq("id", beerId)
+    .single();
+
+  if (beer && data) {
+    createBeerLoggedActivity(beerId, beer.name, beer.brewery, data.id).catch(() => {});
+    checkAndCreateMilestone(user.id).catch(() => {});
+  }
+
   return { data };
 }
 
@@ -59,6 +73,24 @@ export async function addRating(entryId: string, score: number) {
     .single();
 
   if (error) return { error: error.message };
+
+  // Create beer_rated activity (fire and forget)
+  if (data) {
+    // Get beer info for the activity
+    const { data: entry } = await supabase
+      .from("beer_entries")
+      .select("beer_id, beer:beers(name, brewery)")
+      .eq("id", entryId)
+      .single();
+
+    if (entry?.beer) {
+      const beer = Array.isArray(entry.beer) ? entry.beer[0] : entry.beer;
+      if (beer) {
+        createBeerRatedActivity(entry.beer_id, beer.name, beer.brewery, score).catch(() => {});
+      }
+    }
+  }
+
   return { data };
 }
 
