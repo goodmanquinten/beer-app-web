@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { createClient as createAdminClient } from "@supabase/supabase-js";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 import { execFile } from "child_process";
 
 export const maxDuration = 60;
+
+const BUCKET = "beer-renders";
 
 function runScript(args: string[], env: Record<string, string>): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -25,6 +28,13 @@ function runScript(args: string[], env: Record<string, string>): Promise<string>
       }
     });
   });
+}
+
+async function ensureBucket(supabase: ReturnType<typeof createAdminClient>) {
+  const { data: buckets } = await supabase.storage.listBuckets();
+  if (buckets && !buckets.find((b) => b.name === BUCKET)) {
+    await supabase.storage.createBucket(BUCKET, { public: true });
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -73,11 +83,14 @@ export async function POST(req: NextRequest) {
 
     if (fs.existsSync(localRenderPath)) {
       const fileBuffer = fs.readFileSync(localRenderPath);
-      const storagePath = `renders/${beerId}.png`;
+      const storagePath = `${beerId}.png`;
+
+      // Ensure bucket exists
+      await ensureBucket(supabase as unknown as ReturnType<typeof createAdminClient>);
 
       // Upload (upsert) to Supabase Storage
       const { error: uploadError } = await supabase.storage
-        .from("beer-renders")
+        .from(BUCKET)
         .upload(storagePath, fileBuffer, {
           contentType: "image/png",
           upsert: true,
@@ -88,7 +101,7 @@ export async function POST(req: NextRequest) {
       } else {
         // Get the public URL
         const { data: urlData } = supabase.storage
-          .from("beer-renders")
+          .from(BUCKET)
           .getPublicUrl(storagePath);
         publicUrl = urlData.publicUrl;
 

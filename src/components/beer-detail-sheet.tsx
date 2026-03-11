@@ -81,12 +81,12 @@ export default function BeerDetailSheet({
             {imgPhase !== "failed" ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
-                src={imgPhase === "local" ? renderSrc : (beer.image_url || renderSrc)}
+                src={imgPhase === "local" ? renderSrc : `/api/renders?id=${beer.id}`}
                 alt={beer.name}
                 className="w-full h-auto object-contain max-h-56"
                 style={{ filter: "drop-shadow(2px 4px 8px rgba(0,0,0,0.6))" }}
                 onError={() => {
-                  if (imgPhase === "local" && beer.image_url) {
+                  if (imgPhase === "local") {
                     setImgPhase("remote");
                   } else {
                     setImgPhase("failed");

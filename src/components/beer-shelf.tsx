@@ -438,11 +438,11 @@ function ShelfSlot({
       style={style}
       className="flex items-end justify-center overflow-visible"
       {...attributes}
+      {...listeners}
     >
       <div
         className={`beer-can-slot ${isActive ? "dragging" : ""}`}
         style={{ "--can-tilt": `${tilt}deg` } as React.CSSProperties}
-        {...listeners}
         onClick={() => onSelectBeer(slot.beer, slot.entries)}
       >
         <BeerImage beer={slot.beer} canHeight={canHeight} />
@@ -454,24 +454,29 @@ function ShelfSlot({
 // ─── Beer Image ──────────────────────────────────────────────────────────────
 
 function BeerImage({ beer, canHeight }: { beer: Beer; canHeight: number }) {
-  const renderSrc = `/renders/${beer.id}.png`;
-  // Try local render first, then image_url (Supabase Storage), then fallback badge
-  const [phase, setPhase] = useState<"local" | "remote" | "failed">("local");
+  // Phase: "local" tries /renders/{id}.png, "api" tries /api/renders?id={id} (Supabase), "failed" shows badge
+  const [phase, setPhase] = useState<"local" | "api" | "failed">("local");
   const [retryCount, setRetryCount] = useState(0);
+
+  // Reset when beer changes
+  useEffect(() => {
+    setPhase("local");
+    setRetryCount(0);
+  }, [beer.id]);
 
   useEffect(() => {
     if (phase !== "failed") return;
     const timer = setTimeout(() => {
       setPhase("local");
       setRetryCount((c) => c + 1);
-    }, 10000);
+    }, 15000);
     return () => clearTimeout(timer);
   }, [phase, retryCount]);
 
   const src =
     phase === "local"
-      ? `${renderSrc}?v=${retryCount}`
-      : beer.image_url || renderSrc;
+      ? `/renders/${beer.id}.png?v=${retryCount}`
+      : `/api/renders?id=${beer.id}&v=${retryCount}`;
 
   const badgeW = Math.round(canHeight * 0.45);
   const badgeH = Math.round(canHeight * 0.7);
@@ -511,8 +516,8 @@ function BeerImage({ beer, canHeight }: { beer: Beer; canHeight: number }) {
         filter: "drop-shadow(1px 3px 4px rgba(0,0,0,0.5))",
       }}
       onError={() => {
-        if (phase === "local" && beer.image_url) {
-          setPhase("remote");
+        if (phase === "local") {
+          setPhase("api");
         } else {
           setPhase("failed");
         }
