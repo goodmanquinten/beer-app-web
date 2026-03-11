@@ -1,146 +1,250 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import type { Beer, BeerEntry } from "@/lib/types/database";
 import StarRating from "./star-rating";
+
+interface BeerRatings {
+  globalAvg: number | null;
+  friendsAvg: number | null;
+  personalRating: { entryId: string; score: number } | null;
+}
 
 interface BeerDetailSheetProps {
   beer: Beer | null;
   entries: BeerEntry[];
+  ratings: BeerRatings | null;
   onDismiss: () => void;
   onLogAgain: (beer: Beer) => void;
   onDelete: (beer: Beer) => void;
+  onRatingChange: (entryId: string, score: number) => void;
+}
+
+function StarRatingInput({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (score: number) => void;
+}) {
+  return (
+    <div className="flex gap-1">
+      {[1, 2, 3, 4, 5].map((star) => (
+        <button
+          key={star}
+          onClick={() => onChange(star)}
+          className="text-2xl transition-transform active:scale-125"
+          style={{ color: star <= value ? "#f59e0b" : "rgba(212, 165, 74, 0.2)" }}
+        >
+          ★
+        </button>
+      ))}
+    </div>
+  );
 }
 
 export default function BeerDetailSheet({
   beer,
   entries,
+  ratings,
   onDismiss,
   onLogAgain,
   onDelete,
+  onRatingChange,
 }: BeerDetailSheetProps) {
+  const [personalScore, setPersonalScore] = useState(0);
+  const [imgFailed, setImgFailed] = useState(false);
+
+  useEffect(() => {
+    setPersonalScore(ratings?.personalRating?.score ?? 0);
+    setImgFailed(false);
+  }, [ratings, beer]);
+
   if (!beer) return null;
 
-  // Compute stats
-  const ratings = entries
-    .map((e) => {
-      const r = Array.isArray(e.rating) ? e.rating[0] : e.rating;
-      return r?.score;
-    })
-    .filter((s): s is number => s != null);
-
-  const avgRating =
-    ratings.length > 0
-      ? Math.round((ratings.reduce((a, b) => a + b, 0) / ratings.length) * 10) / 10
+  const totalTimes = entries.length;
+  const lastHad =
+    entries.length > 0
+      ? new Date(entries[0].created_at).toLocaleDateString()
       : null;
 
-  const totalTimes = entries.length;
-  const lastHad = entries.length > 0
-    ? new Date(entries[0].created_at).toLocaleDateString()
-    : null;
+  const renderSrc = `/renders/${beer.id}.png`;
+
+  function handleStarClick(score: number) {
+    setPersonalScore(score);
+    // Use existing entry or first entry for this beer
+    const entryId = ratings?.personalRating?.entryId ?? entries[0]?.id;
+    if (entryId) {
+      onRatingChange(entryId, score);
+    }
+  }
 
   return (
     <>
       {/* Backdrop */}
       <div
-        className="fixed inset-0 z-40 transition-opacity"
-        style={{ background: "rgba(0, 0, 0, 0.6)" }}
+        className="fixed inset-0 z-40"
+        style={{ background: "rgba(0, 0, 0, 0.7)", backdropFilter: "blur(4px)" }}
         onClick={onDismiss}
       />
 
-      {/* Sheet */}
+      {/* Sheet — centered */}
       <div
-        className="fixed bottom-0 left-0 right-0 z-50 rounded-t-2xl shadow-2xl max-w-lg mx-auto transition-transform duration-300 ease-out"
+        className="fixed left-0 right-0 z-50 max-w-md mx-auto rounded-2xl shadow-2xl overflow-hidden"
         style={{
+          top: "50%",
+          transform: "translateY(-50%)",
+          margin: "0 16px",
           background: "linear-gradient(180deg, #2a1f12 0%, #1e1610 100%)",
-          borderTop: "1px solid rgba(212, 165, 74, 0.15)",
-          transform: "translateY(0)",
+          border: "1px solid rgba(212, 165, 74, 0.12)",
         }}
       >
-        {/* Handle */}
-        <div className="flex justify-center pt-3 pb-2">
-          <div className="w-10 h-1 rounded-full" style={{ background: "rgba(212, 165, 74, 0.25)" }} />
-        </div>
+        <div className="flex p-5 gap-5">
+          {/* Left: Can render (~40%) */}
+          <div className="w-[38%] flex-shrink-0 flex items-center justify-center">
+            {!imgFailed ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={renderSrc}
+                alt={beer.name}
+                className="w-full h-auto object-contain max-h-56"
+                style={{ filter: "drop-shadow(2px 4px 8px rgba(0,0,0,0.6))" }}
+                onError={() => setImgFailed(true)}
+              />
+            ) : (
+              <div
+                className="w-20 h-28 rounded-sm flex items-center justify-center"
+                style={{
+                  background:
+                    "linear-gradient(180deg, #c4873a 0%, #a06830 50%, #7a4f25 100%)",
+                  boxShadow: "0 2px 6px rgba(0,0,0,0.4)",
+                }}
+              >
+                <span className="text-[10px] text-white font-bold text-center leading-tight px-1">
+                  {beer.name.slice(0, 14)}
+                </span>
+              </div>
+            )}
+          </div>
 
-        <div className="px-5 pb-6 space-y-4">
-          {/* Beer render + name */}
-          <div className="flex items-start gap-4">
-            <div className="w-20 h-24 flex-shrink-0 flex items-center justify-center">
-              {beer.image_url ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={beer.image_url}
-                  alt={beer.name}
-                  className="w-full h-full object-contain"
-                  style={{ filter: "drop-shadow(1px 3px 4px rgba(0,0,0,0.5))" }}
-                />
-              ) : (
-                <div
-                  className="w-14 h-20 rounded-sm flex items-center justify-center"
-                  style={{
-                    background: "linear-gradient(180deg, #c4873a 0%, #a06830 50%, #7a4f25 100%)",
-                    boxShadow: "0 2px 6px rgba(0,0,0,0.4)",
-                  }}
-                >
-                  <span className="text-[9px] text-white font-bold text-center leading-tight px-1">
-                    {beer.name.slice(0, 12)}
-                  </span>
-                </div>
-              )}
-            </div>
-            <div className="flex-1 min-w-0">
-              <h2 className="text-xl font-bold truncate" style={{ color: "#f5e6d0" }}>
+          {/* Right: Info (~60%) */}
+          <div className="flex-1 min-w-0 flex flex-col gap-3">
+            {/* Name / brewery / style */}
+            <div>
+              <h2
+                className="text-lg font-bold leading-tight"
+                style={{ color: "#f5e6d0" }}
+              >
                 {beer.name}
               </h2>
               <p className="text-sm" style={{ color: "rgba(212, 165, 74, 0.6)" }}>
                 {beer.brewery}
               </p>
-              <div className="flex gap-3 mt-1 text-sm" style={{ color: "rgba(212, 165, 74, 0.4)" }}>
+              <div
+                className="flex gap-2 mt-0.5 text-xs"
+                style={{ color: "rgba(212, 165, 74, 0.4)" }}
+              >
                 {beer.style && <span>{beer.style}</span>}
                 {beer.abv && <span>{beer.abv}% ABV</span>}
               </div>
             </div>
-          </div>
 
-          {/* Stats row */}
-          <div className="grid grid-cols-3 gap-3">
-            <div
-              className="rounded-xl p-3 text-center"
-              style={{ background: "rgba(74, 56, 35, 0.3)", border: "1px solid rgba(74, 56, 35, 0.3)" }}
-            >
-              <p className="text-xs" style={{ color: "rgba(212, 165, 74, 0.5)" }}>Rating</p>
-              {avgRating != null ? (
-                <div className="mt-1">
-                  <StarRating score={Math.round(avgRating)} />
-                  <p className="text-xs mt-0.5" style={{ color: "rgba(212, 165, 74, 0.6)" }}>{avgRating}</p>
-                </div>
-              ) : (
-                <p className="text-sm mt-1" style={{ color: "rgba(212, 165, 74, 0.25)" }}>--</p>
-              )}
-            </div>
-            <div
-              className="rounded-xl p-3 text-center"
-              style={{ background: "rgba(74, 56, 35, 0.3)", border: "1px solid rgba(74, 56, 35, 0.3)" }}
-            >
-              <p className="text-xs" style={{ color: "rgba(212, 165, 74, 0.5)" }}>Times had</p>
-              <p className="text-2xl font-bold mt-1" style={{ color: "#f5e6d0" }}>
-                {totalTimes}
+            {/* Your Rating — interactive */}
+            <div>
+              <p
+                className="text-[11px] uppercase tracking-wide mb-1 font-medium"
+                style={{ color: "rgba(212, 165, 74, 0.5)" }}
+              >
+                Your Rating
               </p>
+              <StarRatingInput
+                value={personalScore}
+                onChange={handleStarClick}
+              />
             </div>
-            <div
-              className="rounded-xl p-3 text-center"
-              style={{ background: "rgba(74, 56, 35, 0.3)", border: "1px solid rgba(74, 56, 35, 0.3)" }}
-            >
-              <p className="text-xs" style={{ color: "rgba(212, 165, 74, 0.5)" }}>Last had</p>
-              <p className="text-sm font-medium mt-2" style={{ color: "rgba(245, 230, 208, 0.8)" }}>
-                {lastHad ?? "--"}
-              </p>
+
+            {/* Global & Friends ratings */}
+            <div className="flex gap-4">
+              <div>
+                <p
+                  className="text-[11px] uppercase tracking-wide mb-0.5 font-medium"
+                  style={{ color: "rgba(212, 165, 74, 0.5)" }}
+                >
+                  Global
+                </p>
+                {ratings?.globalAvg != null ? (
+                  <div className="flex items-center gap-1.5">
+                    <StarRating score={Math.round(ratings.globalAvg)} />
+                    <span
+                      className="text-xs font-medium"
+                      style={{ color: "rgba(245, 230, 208, 0.7)" }}
+                    >
+                      {ratings.globalAvg}
+                    </span>
+                  </div>
+                ) : (
+                  <span
+                    className="text-sm"
+                    style={{ color: "rgba(212, 165, 74, 0.25)" }}
+                  >
+                    --
+                  </span>
+                )}
+              </div>
+              <div>
+                <p
+                  className="text-[11px] uppercase tracking-wide mb-0.5 font-medium"
+                  style={{ color: "rgba(212, 165, 74, 0.5)" }}
+                >
+                  Friends
+                </p>
+                {ratings?.friendsAvg != null ? (
+                  <div className="flex items-center gap-1.5">
+                    <StarRating score={Math.round(ratings.friendsAvg)} />
+                    <span
+                      className="text-xs font-medium"
+                      style={{ color: "rgba(245, 230, 208, 0.7)" }}
+                    >
+                      {ratings.friendsAvg}
+                    </span>
+                  </div>
+                ) : (
+                  <span
+                    className="text-sm"
+                    style={{ color: "rgba(212, 165, 74, 0.25)" }}
+                  >
+                    --
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Times had / Last had */}
+            <div className="flex gap-4 text-sm">
+              <div>
+                <span style={{ color: "rgba(212, 165, 74, 0.5)" }}>Times had </span>
+                <span className="font-bold" style={{ color: "#f5e6d0" }}>
+                  {totalTimes}
+                </span>
+              </div>
+              <div>
+                <span style={{ color: "rgba(212, 165, 74, 0.5)" }}>Last </span>
+                <span
+                  className="font-medium"
+                  style={{ color: "rgba(245, 230, 208, 0.8)" }}
+                >
+                  {lastHad ?? "--"}
+                </span>
+              </div>
             </div>
           </div>
+        </div>
 
-          {/* Log Again button */}
+        {/* Bottom buttons */}
+        <div className="px-5 pb-5 flex gap-3">
           <button
             onClick={() => onLogAgain(beer)}
-            className="w-full rounded-xl px-4 py-3 font-medium transition-colors"
+            className="flex-1 rounded-xl px-4 py-2.5 font-medium transition-colors text-sm"
             style={{
               background: "linear-gradient(180deg, #c4873a 0%, #a06830 100%)",
               color: "#fff",
@@ -149,18 +253,16 @@ export default function BeerDetailSheet({
           >
             Log Again
           </button>
-
-          {/* Delete button */}
           <button
             onClick={() => onDelete(beer)}
-            className="w-full rounded-xl px-4 py-2.5 text-sm font-medium transition-colors"
+            className="rounded-xl px-4 py-2.5 text-sm font-medium transition-colors"
             style={{
               border: "1px solid rgba(220, 80, 60, 0.3)",
               color: "rgba(220, 100, 80, 0.8)",
               background: "transparent",
             }}
           >
-            Remove from Shelf
+            Remove
           </button>
         </div>
       </div>

@@ -117,7 +117,7 @@ export default function ActivityCard({ activity, currentUserId }: ActivityCardPr
             {sentence.highlight && (
               <span style={{ color: "var(--gold-accent)" }}>{sentence.highlight}</span>
             )}
-            {meta?.brewery && activity.type !== "milestone_reached" && (
+            {typeof meta?.brewery === "string" && activity.type !== "milestone_reached" && (
               <span style={{ color: "rgba(245, 230, 208, 0.35)" }}>
                 {" "}
                 · {meta.brewery as string}

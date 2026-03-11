@@ -28,6 +28,7 @@ interface BeerShelfProps {
   onSelectBeer: (beer: Beer, entries: BeerEntry[]) => void;
   arrangement?: string[];
   onArrangementChange?: (beerIds: string[]) => void;
+  onAddBeer?: () => void;
 }
 
 type SlotItem =
@@ -143,15 +144,21 @@ function buildSlots(
     orderedBeerIds = Array.from(beerMap.keys());
   }
 
-  const totalSlots = config.minRows * config.cols;
   const slots: SlotItem[] = [];
-  for (let i = 0; i < totalSlots; i++) {
-    if (i < orderedBeerIds.length) {
-      const beerId = orderedBeerIds[i];
-      const data = beerMap.get(beerId)!;
-      slots.push({ id: beerId, type: "beer", beer: data.beer, entries: data.entries });
-    } else {
-      slots.push({ id: `empty-${i}`, type: "empty" });
+  for (let i = 0; i < orderedBeerIds.length; i++) {
+    const beerId = orderedBeerIds[i];
+    const data = beerMap.get(beerId)!;
+    slots.push({ id: beerId, type: "beer", beer: data.beer, entries: data.entries });
+  }
+  // Add exactly one "add" slot after the last beer
+  slots.push({ id: "add-new", type: "empty" });
+
+  // Pad remaining slots in the last row so the grid stays aligned
+  const remainder = slots.length % config.cols;
+  if (remainder !== 0) {
+    const padding = config.cols - remainder;
+    for (let i = 0; i < padding; i++) {
+      slots.push({ id: `pad-${i}`, type: "empty" });
     }
   }
   return slots;
@@ -185,6 +192,7 @@ export default function BeerShelf({
   onSelectBeer,
   arrangement,
   onArrangementChange,
+  onAddBeer,
 }: BeerShelfProps) {
   const { ref: containerRef, width: containerWidth } = useContainerWidth();
   const beerCount = useMemo(() => deduplicateBeers(entries).size, [entries]);
@@ -297,6 +305,7 @@ export default function BeerShelf({
                       isOver={overId === slot.id}
                       isGhostRow={!hasAnyBeer}
                       onSelectBeer={onSelectBeer}
+                      onAddBeer={onAddBeer}
                     />
                   ))}
                 </div>
@@ -359,6 +368,7 @@ function ShelfSlot({
   isOver,
   isGhostRow,
   onSelectBeer,
+  onAddBeer,
 }: {
   slot: SlotItem;
   slotHeight: number;
@@ -369,6 +379,7 @@ function ShelfSlot({
   isOver: boolean;
   isGhostRow: boolean;
   onSelectBeer: (beer: Beer, entries: BeerEntry[]) => void;
+  onAddBeer?: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition } =
     useSortable({ id: slot.id });
@@ -380,6 +391,17 @@ function ShelfSlot({
   };
 
   if (slot.type === "empty") {
+    const isAddSlot = slot.id === "add-new";
+
+    if (!isAddSlot) {
+      // Padding slot — render invisible spacer
+      return (
+        <div ref={setNodeRef} style={style} {...attributes} />
+      );
+    }
+
+    // The single "+" add button
+    const btnSize = Math.round(canHeight * 0.35);
     return (
       <div
         ref={setNodeRef}
@@ -387,10 +409,23 @@ function ShelfSlot({
         className="flex items-end justify-center overflow-visible"
         {...attributes}
       >
-        <div
-          className={`empty-slot ${isOver ? "drop-target" : ""} ${isGhostRow ? "ghost-row" : ""}`}
-          style={{ width: emptyW, height: emptyH, marginBottom: SHELF_OVERLAP + 2 }}
-        />
+        <button
+          onClick={onAddBeer}
+          className={`flex items-center justify-center rounded-full transition-all ${isOver ? "drop-target" : ""}`}
+          style={{
+            width: btnSize,
+            height: btnSize,
+            marginBottom: SHELF_OVERLAP + 2 + (emptyH - btnSize) / 2,
+            background: "rgba(212, 165, 74, 0.1)",
+            border: "2px solid rgba(212, 165, 74, 0.3)",
+            color: "rgba(212, 165, 74, 0.5)",
+            fontSize: btnSize * 0.5,
+            lineHeight: 1,
+          }}
+          aria-label="Add a beer"
+        >
+          +
+        </button>
       </div>
     );
   }
@@ -432,7 +467,7 @@ function BeerImage({ beer, canHeight }: { beer: Beer; canHeight: number }) {
     return () => clearTimeout(timer);
   }, [failed, retryCount]);
 
-  const src = beer.image_url || `${renderSrc}?v=${retryCount}`;
+  const src = `${renderSrc}?v=${retryCount}`;
 
   const badgeW = Math.round(canHeight * 0.45);
   const badgeH = Math.round(canHeight * 0.7);

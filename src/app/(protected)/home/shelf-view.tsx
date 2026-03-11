@@ -8,7 +8,7 @@ import BeerDetailSheet from "@/components/beer-detail-sheet";
 import ScanFab from "@/components/scan-fab";
 import NewBeerOverlay from "@/components/new-beer-overlay";
 import { searchBeers, createBeerFromOCR } from "@/actions/beers";
-import { createEntry, addRating, removeBeerFromShelf } from "@/actions/entries";
+import { createEntry, addRating, removeBeerFromShelf, getBeerRatings } from "@/actions/entries";
 
 interface ShelfViewProps {
   entries: BeerEntry[];
@@ -38,9 +38,15 @@ export default function ShelfView({ entries }: ShelfViewProps) {
   const router = useRouter();
   const [selectedBeer, setSelectedBeer] = useState<Beer | null>(null);
   const [selectedEntries, setSelectedEntries] = useState<BeerEntry[]>([]);
+  const [beerRatings, setBeerRatings] = useState<{
+    globalAvg: number | null;
+    friendsAvg: number | null;
+    personalRating: { entryId: string; score: number } | null;
+  } | null>(null);
   const [arrangement, setArrangement] = useState<string[] | undefined>(
     loadArrangement
   );
+  const scanFabRef = useRef<{ trigger: () => void }>(null);
 
   // Scan-to-rate state
   const [overlayState, setOverlayState] = useState<OverlayState>(null);
@@ -56,11 +62,25 @@ export default function ShelfView({ entries }: ShelfViewProps) {
   function handleSelectBeer(beer: Beer, beerEntries: BeerEntry[]) {
     setSelectedBeer(beer);
     setSelectedEntries(beerEntries);
+    setBeerRatings(null);
+    getBeerRatings(beer.id).then((result) => {
+      if (result.data) setBeerRatings(result.data);
+    });
   }
 
   function handleDismiss() {
     setSelectedBeer(null);
     setSelectedEntries([]);
+    setBeerRatings(null);
+  }
+
+  async function handleRatingChange(entryId: string, score: number) {
+    await addRating(entryId, score);
+    // Refresh ratings
+    if (selectedBeer) {
+      const result = await getBeerRatings(selectedBeer.id);
+      if (result.data) setBeerRatings(result.data);
+    }
   }
 
   async function handleLogAgain(beer: Beer) {
@@ -189,7 +209,7 @@ export default function ShelfView({ entries }: ShelfViewProps) {
         <div className="mt-4 opacity-40">
           <BeerShelf entries={[]} onSelectBeer={() => {}} />
         </div>
-        <ScanFab onImageCaptured={handleImageCaptured} />
+        <ScanFab onImageCaptured={handleImageCaptured} triggerRef={scanFabRef} />
         {overlayState && (
           <NewBeerOverlay
             state={overlayState}
@@ -209,15 +229,18 @@ export default function ShelfView({ entries }: ShelfViewProps) {
         onSelectBeer={handleSelectBeer}
         arrangement={arrangement}
         onArrangementChange={handleArrangementChange}
+        onAddBeer={() => scanFabRef.current?.trigger()}
       />
-      <ScanFab onImageCaptured={handleImageCaptured} />
+      <ScanFab onImageCaptured={handleImageCaptured} triggerRef={scanFabRef} />
       {selectedBeer && (
         <BeerDetailSheet
           beer={selectedBeer}
           entries={selectedEntries}
+          ratings={beerRatings}
           onDismiss={handleDismiss}
           onLogAgain={handleLogAgain}
           onDelete={handleDelete}
+          onRatingChange={handleRatingChange}
         />
       )}
       {overlayState && (

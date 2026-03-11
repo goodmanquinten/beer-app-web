@@ -1,16 +1,21 @@
 "use client";
 
-import { useRef, useState, useCallback } from "react";
+import { useRef, useState, useCallback, useImperativeHandle } from "react";
 import CameraViewfinder from "./camera-viewfinder";
 
 interface ScanFabProps {
   onImageCaptured: (file: File) => void;
+  triggerRef?: React.Ref<{ trigger: () => void }>;
 }
 
-export default function ScanFab({ onImageCaptured }: ScanFabProps) {
+export default function ScanFab({ onImageCaptured, triggerRef }: ScanFabProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [showViewfinder, setShowViewfinder] = useState(false);
   const [useFileInput, setUseFileInput] = useState(false);
+
+  useImperativeHandle(triggerRef, () => ({
+    trigger: () => handleFabClick(),
+  }));
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];

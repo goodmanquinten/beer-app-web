@@ -36,8 +36,10 @@ export async function compareWithUser(otherUserId: string): Promise<{ data?: Com
       .eq("user_id", otherUserId),
   ]);
 
-  const myEntries = myEntriesResult.data ?? [];
-  const theirEntries = theirEntriesResult.data ?? [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const myEntries = (myEntriesResult.data ?? []) as any[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const theirEntries = (theirEntriesResult.data ?? []) as any[];
 
   // Build beer maps (unique beers per user with avg rating)
   const myBeers = buildBeerMap(myEntries);

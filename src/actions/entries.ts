@@ -130,6 +130,79 @@ export async function removeAllFromShelf() {
   return { success: true };
 }
 
+export async function getBeerRatings(beerId: string) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) return { error: "Not authenticated" };
+
+  // Get all entries+ratings for this beer (global)
+  const { data: allEntries } = await supabase
+    .from("beer_entries")
+    .select("id, user_id, rating:ratings(score)")
+    .eq("beer_id", beerId);
+
+  // Extract all scores
+  const allScores: number[] = [];
+  const personalScores: { entryId: string; score: number }[] = [];
+
+  for (const entry of allEntries ?? []) {
+    const r = Array.isArray(entry.rating) ? entry.rating[0] : entry.rating;
+    if (r && typeof r === "object" && "score" in r) {
+      const score = (r as { score: number }).score;
+      allScores.push(score);
+      if (entry.user_id === user.id) {
+        personalScores.push({ entryId: entry.id, score });
+      }
+    }
+  }
+
+  const globalAvg =
+    allScores.length > 0
+      ? Math.round((allScores.reduce((a, b) => a + b, 0) / allScores.length) * 10) / 10
+      : null;
+
+  // Personal rating (most recent)
+  const personalRating = personalScores.length > 0 ? personalScores[0] : null;
+
+  // Friends avg: get friend IDs, filter scores
+  const { data: friendships } = await supabase
+    .from("friendships")
+    .select("requester_id, addressee_id")
+    .eq("status", "accepted")
+    .or(`requester_id.eq.${user.id},addressee_id.eq.${user.id}`);
+
+  const friendIds = new Set(
+    (friendships ?? []).map((f) =>
+      f.requester_id === user.id ? f.addressee_id : f.requester_id
+    )
+  );
+
+  const friendScores: number[] = [];
+  for (const entry of allEntries ?? []) {
+    if (!friendIds.has(entry.user_id)) continue;
+    const r = Array.isArray(entry.rating) ? entry.rating[0] : entry.rating;
+    if (r && typeof r === "object" && "score" in r) {
+      friendScores.push((r as { score: number }).score);
+    }
+  }
+
+  const friendsAvg =
+    friendScores.length > 0
+      ? Math.round((friendScores.reduce((a, b) => a + b, 0) / friendScores.length) * 10) / 10
+      : null;
+
+  return {
+    data: {
+      globalAvg,
+      friendsAvg,
+      personalRating,
+    },
+  };
+}
+
 export async function getRecentEntries(limit = 20) {
   const supabase = await createClient();
 
