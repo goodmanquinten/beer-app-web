@@ -158,7 +158,7 @@ function buildSlots(
   if (remainder !== 0) {
     const padding = config.cols - remainder;
     for (let i = 0; i < padding; i++) {
-      slots.push({ id: `pad-${i}`, type: "empty" });
+      slots.push({ id: `pad-${slots.length}-${i}`, type: "empty" });
     }
   }
   return slots;
@@ -455,25 +455,29 @@ function ShelfSlot({
 
 function BeerImage({ beer, canHeight }: { beer: Beer; canHeight: number }) {
   const renderSrc = `/renders/${beer.id}.png`;
-  const [failed, setFailed] = useState(false);
+  // Try local render first, then image_url (Supabase Storage), then fallback badge
+  const [phase, setPhase] = useState<"local" | "remote" | "failed">("local");
   const [retryCount, setRetryCount] = useState(0);
 
   useEffect(() => {
-    if (!failed) return;
+    if (phase !== "failed") return;
     const timer = setTimeout(() => {
-      setFailed(false);
+      setPhase("local");
       setRetryCount((c) => c + 1);
     }, 10000);
     return () => clearTimeout(timer);
-  }, [failed, retryCount]);
+  }, [phase, retryCount]);
 
-  const src = `${renderSrc}?v=${retryCount}`;
+  const src =
+    phase === "local"
+      ? `${renderSrc}?v=${retryCount}`
+      : beer.image_url || renderSrc;
 
   const badgeW = Math.round(canHeight * 0.45);
   const badgeH = Math.round(canHeight * 0.7);
   const fontSize = canHeight >= 96 ? 10 : canHeight >= 76 ? 9 : 8;
 
-  if (failed) {
+  if (phase === "failed") {
     return (
       <div
         className="rounded-sm flex items-center justify-center"
@@ -506,7 +510,13 @@ function BeerImage({ beer, canHeight }: { beer: Beer; canHeight: number }) {
         objectFit: "contain",
         filter: "drop-shadow(1px 3px 4px rgba(0,0,0,0.5))",
       }}
-      onError={() => setFailed(true)}
+      onError={() => {
+        if (phase === "local" && beer.image_url) {
+          setPhase("remote");
+        } else {
+          setPhase("failed");
+        }
+      }}
       draggable={false}
     />
   );

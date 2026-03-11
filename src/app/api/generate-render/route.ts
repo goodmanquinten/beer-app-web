@@ -67,6 +67,45 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: result.error }, { status: 500 });
     }
 
+    // Upload the render to Supabase Storage for persistence on Vercel
+    const localRenderPath = path.join(process.cwd(), "public", "renders", `${beerId}.png`);
+    let publicUrl: string | null = null;
+
+    if (fs.existsSync(localRenderPath)) {
+      const fileBuffer = fs.readFileSync(localRenderPath);
+      const storagePath = `renders/${beerId}.png`;
+
+      // Upload (upsert) to Supabase Storage
+      const { error: uploadError } = await supabase.storage
+        .from("beer-renders")
+        .upload(storagePath, fileBuffer, {
+          contentType: "image/png",
+          upsert: true,
+        });
+
+      if (uploadError) {
+        console.error("Storage upload error:", uploadError);
+      } else {
+        // Get the public URL
+        const { data: urlData } = supabase.storage
+          .from("beer-renders")
+          .getPublicUrl(storagePath);
+        publicUrl = urlData.publicUrl;
+
+        // Update the beer's image_url in the database
+        if (publicUrl) {
+          const { error: updateError } = await supabase
+            .from("beers")
+            .update({ image_url: publicUrl })
+            .eq("id", beerId);
+
+          if (updateError) {
+            console.error("DB image_url update error:", updateError);
+          }
+        }
+      }
+    }
+
     // Cleanup temp files
     try {
       fs.unlinkSync(inputPath);
@@ -75,7 +114,9 @@ export async function POST(req: NextRequest) {
       // best-effort
     }
 
-    return NextResponse.json({ renderUrl: result.renderUrl });
+    return NextResponse.json({
+      renderUrl: publicUrl || result.renderUrl,
+    });
   } catch (err) {
     console.error("Render generation error:", err);
     return NextResponse.json(

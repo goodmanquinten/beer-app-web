@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import type { Beer, BeerEntry } from "@/lib/types/database";
 import StarRating from "./star-rating";
+import StarSlider from "./star-slider";
 
 interface BeerRatings {
   globalAvg: number | null;
@@ -20,29 +21,6 @@ interface BeerDetailSheetProps {
   onRatingChange: (entryId: string, score: number) => void;
 }
 
-function StarRatingInput({
-  value,
-  onChange,
-}: {
-  value: number;
-  onChange: (score: number) => void;
-}) {
-  return (
-    <div className="flex gap-1">
-      {[1, 2, 3, 4, 5].map((star) => (
-        <button
-          key={star}
-          onClick={() => onChange(star)}
-          className="text-2xl transition-transform active:scale-125"
-          style={{ color: star <= value ? "#f59e0b" : "rgba(212, 165, 74, 0.2)" }}
-        >
-          ★
-        </button>
-      ))}
-    </div>
-  );
-}
-
 export default function BeerDetailSheet({
   beer,
   entries,
@@ -53,11 +31,11 @@ export default function BeerDetailSheet({
   onRatingChange,
 }: BeerDetailSheetProps) {
   const [personalScore, setPersonalScore] = useState(0);
-  const [imgFailed, setImgFailed] = useState(false);
+  const [imgPhase, setImgPhase] = useState<"local" | "remote" | "failed">("local");
 
   useEffect(() => {
     setPersonalScore(ratings?.personalRating?.score ?? 0);
-    setImgFailed(false);
+    setImgPhase("local");
   }, [ratings, beer]);
 
   if (!beer) return null;
@@ -70,9 +48,8 @@ export default function BeerDetailSheet({
 
   const renderSrc = `/renders/${beer.id}.png`;
 
-  function handleStarClick(score: number) {
+  function handleRatingChange(score: number) {
     setPersonalScore(score);
-    // Use existing entry or first entry for this beer
     const entryId = ratings?.personalRating?.entryId ?? entries[0]?.id;
     if (entryId) {
       onRatingChange(entryId, score);
@@ -90,11 +67,10 @@ export default function BeerDetailSheet({
 
       {/* Sheet — centered */}
       <div
-        className="fixed left-0 right-0 z-50 max-w-md mx-auto rounded-2xl shadow-2xl overflow-hidden"
+        className="fixed z-50 left-4 right-4 max-w-md mx-auto rounded-2xl shadow-2xl overflow-hidden"
         style={{
           top: "50%",
           transform: "translateY(-50%)",
-          margin: "0 16px",
           background: "linear-gradient(180deg, #2a1f12 0%, #1e1610 100%)",
           border: "1px solid rgba(212, 165, 74, 0.12)",
         }}
@@ -102,14 +78,20 @@ export default function BeerDetailSheet({
         <div className="flex p-5 gap-5">
           {/* Left: Can render (~40%) */}
           <div className="w-[38%] flex-shrink-0 flex items-center justify-center">
-            {!imgFailed ? (
+            {imgPhase !== "failed" ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
-                src={renderSrc}
+                src={imgPhase === "local" ? renderSrc : (beer.image_url || renderSrc)}
                 alt={beer.name}
                 className="w-full h-auto object-contain max-h-56"
                 style={{ filter: "drop-shadow(2px 4px 8px rgba(0,0,0,0.6))" }}
-                onError={() => setImgFailed(true)}
+                onError={() => {
+                  if (imgPhase === "local" && beer.image_url) {
+                    setImgPhase("remote");
+                  } else {
+                    setImgPhase("failed");
+                  }
+                }}
               />
             ) : (
               <div
@@ -149,7 +131,7 @@ export default function BeerDetailSheet({
               </div>
             </div>
 
-            {/* Your Rating — interactive */}
+            {/* Your Rating — interactive slider with decimals */}
             <div>
               <p
                 className="text-[11px] uppercase tracking-wide mb-1 font-medium"
@@ -157,10 +139,9 @@ export default function BeerDetailSheet({
               >
                 Your Rating
               </p>
-              <StarRatingInput
-                value={personalScore}
-                onChange={handleStarClick}
-              />
+              <div className="scale-[0.6] origin-top-left -mb-6">
+                <StarSlider value={personalScore} onChange={handleRatingChange} />
+              </div>
             </div>
 
             {/* Global & Friends ratings */}
