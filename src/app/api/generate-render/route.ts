@@ -129,7 +129,9 @@ function createProviderForRender(
   genDir: string,
   providerName: string
 ) {
-  switch (providerName) {
+  const normalizedProvider = providerName.trim().toLowerCase();
+
+  switch (normalizedProvider) {
     case "openai": {
       const mod = requireFn(path.join(genDir, "dist", "provider", "openai.js"));
       return new mod.OpenAIProvider();
