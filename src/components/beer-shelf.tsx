@@ -506,8 +506,9 @@ function BeerImage({ beer, canHeight }: { beer: Beer; canHeight: number }) {
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img
+      key={`${beer.id}-${phase}-${retryCount}`}
       src={src}
-      alt={beer.name}
+      alt=""
       className="block pointer-events-none"
       style={{
         height: canHeight,
