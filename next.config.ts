@@ -1,7 +1,12 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  outputFileTracingIncludes: {
+    "/api/generate-render": [
+      "./scripts/**/*",
+      "./generator/**/*",
+    ],
+  },
 };
 
 export default nextConfig;

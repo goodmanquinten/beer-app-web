@@ -1,0 +1,32 @@
+{
+  "name": "generator_playground",
+  "version": "0.1.0",
+  "description": "Beer can/bottle image generator playground",
+  "private": true,
+  "main": "dist/pipeline.js",
+  "exports": {
+    ".": "./dist/pipeline.js",
+    "./pipeline": "./dist/pipeline.js",
+    "./provider": "./dist/provider/index.js",
+    "./dist/*": "./dist/*"
+  },
+  "scripts": {
+    "dev": "ts-node src/cli.ts",
+    "build": "tsc",
+    "gen": "ts-node src/cli.ts",
+    "batch": "ts-node src/batch.ts"
+  },
+  "dependencies": {
+    "commander": "^12.1.0",
+    "dotenv": "^16.4.5",
+    "form-data": "^4.0.0",
+    "node-vibrant": "^3.1.6",
+    "sharp": "^0.33.2",
+    "tesseract.js": "^7.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  }
+}

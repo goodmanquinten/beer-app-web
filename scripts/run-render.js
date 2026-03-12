@@ -10,7 +10,8 @@ const origLog = console.log;
 console.log = (...args) => process.stderr.write(args.join(" ") + "\n");
 
 async function main() {
-  const genPkgDir = path.resolve(__dirname, "..", "..", "generator_playground");
+  // Use the local generator/ copy bundled in the project
+  const genPkgDir = path.resolve(__dirname, "..", "generator");
   const pipeline = require(path.join(genPkgDir, "dist", "pipeline.js"));
   const providerMod = require(path.join(genPkgDir, "dist", "provider", "index.js"));
 

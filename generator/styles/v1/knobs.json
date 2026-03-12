@@ -1,0 +1,20 @@
+{
+  "output_size": 1024,
+  "crop": {
+    "width_ratio": 1.0,
+    "height_ratio": 1.0
+  },
+  "outline": {
+    "thickness": "extra-thick"
+  },
+  "shading": {
+    "mode": "cel",
+    "bands": 4
+  },
+  "pose": "three_quarter_front",
+  "lighting": {
+    "key": "top_left",
+    "rim": "right_edge",
+    "shadow": "none"
+  }
+}
