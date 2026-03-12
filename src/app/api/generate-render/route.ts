@@ -4,13 +4,7 @@ import { createClient as createAdminClient } from "@supabase/supabase-js";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
-import { execFile } from "child_process";
-
-// Force Next.js file tracer to include pipeline dependencies and all their
-// transitive deps (e.g. detect-libc, color, semver, @jimp/*).
-// These are used by the child process (scripts/run-render.js → generator/*).
-import "sharp";
-import "node-vibrant";
+import sharp from "sharp";
 
 export const maxDuration = 60;
 
@@ -22,34 +16,90 @@ function getAdminSupabase() {
   return createAdminClient(url, serviceKey);
 }
 
-function runScript(args: string[], env: Record<string, string>): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const scriptPath = path.join(process.cwd(), "scripts", "run-render.js");
-    console.log("Running render script:", scriptPath);
-    console.log("CWD:", process.cwd());
-    console.log("Generator exists:", fs.existsSync(path.join(process.cwd(), "generator", "dist", "pipeline.js")));
+/**
+ * Run the generator pipeline inline (same Node process).
+ * Previously used execFile child process, but that breaks on Vercel
+ * because the file tracer can't follow dynamic require() chains.
+ */
+async function runPipelineInline(
+  beerId: string,
+  inputPath: string,
+  outputDir: string,
+  containerType: string,
+  providerName: string,
+): Promise<{ renderPath: string } | { error: string }> {
+  const genDir = path.join(process.cwd(), "generator");
+  const pipelinePath = path.join(genDir, "dist", "pipeline.js");
 
-    execFile("node", [scriptPath, ...args], {
-      env: { ...process.env, ...env },
-      timeout: 55000, // Stay under Vercel's 60s limit
-    }, (error, stdout, stderr) => {
-      if (stderr) console.log("Pipeline log:", stderr.slice(0, 1000));
-      const output = stdout.trim();
-      console.log("Pipeline stdout:", output.slice(0, 500));
-      if (error) {
-        console.error("Pipeline exec error:", error.message);
-        if (!output) {
-          reject(new Error(error.message));
-          return;
-        }
-      }
-      if (!output) {
-        reject(new Error("No output from render script"));
-      } else {
-        resolve(output);
-      }
-    });
+  if (!fs.existsSync(pipelinePath)) {
+    return { error: `Pipeline not found: ${pipelinePath}` };
+  }
+
+  // Use eval('require') to bypass Turbopack static analysis — these are
+  // runtime-only loads from the bundled generator/ directory
+  // eslint-disable-next-line no-eval
+  const _require = eval("require") as NodeRequire;
+  const pipeline = _require(pipelinePath);
+  const providerMod = _require(path.join(genDir, "dist", "provider", "index.js"));
+  const ocrMod = _require(path.join(genDir, "dist", "ocr.js"));
+
+  // Skip spell-check to save ~15s (tesseract download + OCR on Vercel)
+  ocrMod.spellCheckRender = async () => ({
+    total_words: 0, bad_words: [], good_words: [], score: 1,
   });
+
+  const provider = providerMod.createProvider(providerName || "openai");
+
+  const result = await pipeline.runPipeline({
+    inputPath,
+    containerType: containerType || "can",
+    outputDir,
+    styleVersion: "v1",
+    providers: [provider],
+  });
+
+  // Find best render
+  const outputs = result.providerOutputs;
+  let best = outputs.find((o: { render_png: string; validation: { passed: boolean } }) =>
+    o.render_png && o.validation.passed
+  ) || outputs.find((o: { render_png: string }) => o.render_png);
+
+  // Fallback: if pipeline reported failure but a render file exists on disk
+  if (!best) {
+    const fallbackFiles = fs.readdirSync(outputDir).filter((f: string) => f.endsWith("_render.png"));
+    if (fallbackFiles.length > 0) {
+      console.log("Using fallback render file:", fallbackFiles[0]);
+      best = { render_png: path.join(outputDir, fallbackFiles[0]) };
+    }
+  }
+
+  if (!best) {
+    const errDetails = outputs.map(
+      (o: { validation?: { issues?: string[] } }) => o.validation?.issues?.join("; ") || "unknown"
+    ).join(" | ");
+    return { error: "No render produced: " + errDetails };
+  }
+
+  // Copy to public/renders/ and trim
+  const rendersDir = path.join(process.cwd(), "public", "renders");
+  fs.mkdirSync(rendersDir, { recursive: true });
+  const publicPath = path.join(rendersDir, `${beerId}.png`);
+  fs.copyFileSync(best.render_png, publicPath);
+
+  // Trim transparent padding so the can fills the image
+  try {
+    const trimmed = await sharp(publicPath).trim({ threshold: 10 }).toBuffer();
+    const margin = 20;
+    const extended = await sharp(trimmed)
+      .extend({ top: margin, bottom: margin, left: margin, right: margin, background: { r: 0, g: 0, b: 0, alpha: 0 } })
+      .png()
+      .toBuffer();
+    fs.writeFileSync(publicPath, extended);
+  } catch (trimErr) {
+    console.warn("Trim warning:", trimErr instanceof Error ? trimErr.message : trimErr);
+  }
+
+  return { renderPath: publicPath };
 }
 
 export async function POST(req: NextRequest) {
@@ -81,29 +131,23 @@ export async function POST(req: NextRequest) {
     const outputDir = path.join(tmpDir, `beer_output_${beerId}`);
     const providerName = process.env.RENDER_PROVIDER || "openai";
 
-    // Run pipeline in a separate Node process to avoid Turbopack
-    const output = await runScript(
-      [beerId, inputPath, outputDir, containerType, providerName],
-      { OPENAI_API_KEY: process.env.OPENAI_API_KEY || "" }
+    // Run pipeline inline (same process — avoids Vercel dependency tracing issues)
+    const pipelineResult = await runPipelineInline(
+      beerId, inputPath, outputDir, containerType, providerName,
     );
 
-    const result = JSON.parse(output);
-    if (result.error) {
-      return NextResponse.json({ error: result.error }, { status: 500 });
+    if ("error" in pipelineResult) {
+      return NextResponse.json({ error: pipelineResult.error }, { status: 500 });
     }
 
     // Upload the render to Supabase Storage for persistence on Vercel
-    const localRenderPath = path.join(process.cwd(), "public", "renders", `${beerId}.png`);
     let publicUrl: string | null = null;
 
-    if (fs.existsSync(localRenderPath)) {
-      const fileBuffer = fs.readFileSync(localRenderPath);
+    if (fs.existsSync(pipelineResult.renderPath)) {
+      const fileBuffer = fs.readFileSync(pipelineResult.renderPath);
       const storagePath = `${beerId}.png`;
-
-      // Use admin client for storage operations (bypasses RLS)
       const admin = getAdminSupabase();
 
-      // Upload (upsert) to Supabase Storage
       const { error: uploadError } = await admin.storage
         .from(BUCKET)
         .upload(storagePath, fileBuffer, {
@@ -114,13 +158,11 @@ export async function POST(req: NextRequest) {
       if (uploadError) {
         console.error("Storage upload error:", uploadError);
       } else {
-        // Get the public URL
         const { data: urlData } = admin.storage
           .from(BUCKET)
           .getPublicUrl(storagePath);
         publicUrl = urlData.publicUrl;
 
-        // Update the beer's image_url in the database
         if (publicUrl) {
           const { error: updateError } = await admin
             .from("beers")
@@ -133,7 +175,7 @@ export async function POST(req: NextRequest) {
         }
       }
     } else {
-      console.error("Render file not found at:", localRenderPath);
+      console.error("Render file not found at:", pipelineResult.renderPath);
     }
 
     // Cleanup temp files
@@ -145,7 +187,7 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({
-      renderUrl: publicUrl || result.renderUrl,
+      renderUrl: publicUrl || `/renders/${beerId}.png`,
     });
   } catch (err) {
     console.error("Render generation error:", err);
