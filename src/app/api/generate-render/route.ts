@@ -44,6 +44,10 @@ async function runPipelineInline(
   // runtime-only loads from the bundled generator/ directory
   const _require = eval("require") as NodeRequire;
 
+  if (process.env.OPENAI_API_KEY) {
+    process.env.OPENAI_API_KEY = process.env.OPENAI_API_KEY.trim();
+  }
+
   // Pre-inject stub modules into require cache for packages with deep
   // transitive deps that can't be fully traced on Vercel.
   const Module = _require("module");
