@@ -31,7 +31,7 @@ async function listAllPngFiles(admin: any) {
       return { error: error.message };
     }
 
-    const pageFiles = (data || []).filter((file) => file.name.endsWith(".png"));
+    const pageFiles = (data || []).filter((file: { name: string }) => file.name.endsWith(".png"));
     allFiles.push(...pageFiles);
 
     if (!data || data.length < pageSize) {
