@@ -34,31 +34,16 @@ export default function BeerDetailSheet({
   const [imgSrc, setImgSrc] = useState<string | null>(null);
   const initialScore = ratings?.personalRating?.score ?? 0;
 
-  // Probe render URLs with JS Image()
   useEffect(() => {
-    if (!beer) return;
+    if (!beer?.image_url) {
+      setImgSrc(null);
+      return;
+    }
     let cancelled = false;
-    const localSrc = `/renders/${beer.id}.png`;
-    const apiSrc = `/api/renders?id=${beer.id}`;
-    const candidates = [
-      beer.image_url,
-      localSrc,
-      apiSrc,
-    ].filter((src): src is string => Boolean(src));
-
-    const tryLoad = (index: number) => {
-      if (index >= candidates.length) return;
-      const img = new Image();
-      img.onload = () => {
-        if (!cancelled) setImgSrc(candidates[index]);
-      };
-      img.onerror = () => {
-        tryLoad(index + 1);
-      };
-      img.src = candidates[index];
-    };
-
-    tryLoad(0);
+    const img = new Image();
+    img.onload = () => { if (!cancelled) setImgSrc(beer.image_url); };
+    img.onerror = () => { if (!cancelled) setImgSrc(null); };
+    img.src = beer.image_url;
     return () => { cancelled = true; };
   }, [beer]);
 

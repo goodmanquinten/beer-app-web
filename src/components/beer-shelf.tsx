@@ -458,30 +458,15 @@ function BeerImage({ beer, canHeight }: { beer: Beer; canHeight: number }) {
   const [loadedSrc, setLoadedSrc] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!beer.image_url) {
+      setLoadedSrc(null);
+      return;
+    }
     let cancelled = false;
-
-    const localSrc = `/renders/${beer.id}.png`;
-    const apiSrc = `/api/renders?id=${beer.id}`;
-    const candidates = [
-      beer.image_url,
-      localSrc,
-      apiSrc,
-    ].filter((src): src is string => Boolean(src));
-
-    const tryLoad = (index: number) => {
-      if (index >= candidates.length) return;
-      const img = new Image();
-      img.onload = () => {
-        if (!cancelled) setLoadedSrc(candidates[index]);
-      };
-      img.onerror = () => {
-        tryLoad(index + 1);
-      };
-      img.src = candidates[index];
-    };
-
-    tryLoad(0);
-
+    const img = new Image();
+    img.onload = () => { if (!cancelled) setLoadedSrc(beer.image_url); };
+    img.onerror = () => { if (!cancelled) setLoadedSrc(null); };
+    img.src = beer.image_url;
     return () => { cancelled = true; };
   }, [beer.id, beer.image_url]);
 
