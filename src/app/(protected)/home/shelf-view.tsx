@@ -52,7 +52,8 @@ export default function ShelfView({ entries }: ShelfViewProps) {
   const [overlayState, setOverlayState] = useState<OverlayState>(null);
   const [scannedBeer, setScannedBeer] = useState<Beer | null>(null);
   const [scannedEntryId, setScannedEntryId] = useState<string | null>(null);
-  const renderPromiseRef = useRef<Promise<void> | null>(null);
+  const [renderError, setRenderError] = useState<string | null>(null);
+  const renderPromiseRef = useRef<Promise<{ error: string | null }> | null>(null);
 
   const handleArrangementChange = useCallback((beerIds: string[]) => {
     setArrangement(beerIds);
@@ -97,6 +98,7 @@ export default function ShelfView({ entries }: ShelfViewProps) {
 
   async function handleImageCaptured(file: File) {
     setOverlayState("processing");
+    setRenderError(null);
 
     const dataUrl = await fileToDataUrl(file);
 
@@ -123,7 +125,7 @@ export default function ShelfView({ entries }: ShelfViewProps) {
         return;
       }
 
-      const { name, brewery, style } = await idResponse.json();
+      const { name, brewery } = await idResponse.json();
 
       // 2. Search DB for existing match
       let beer: Beer;
@@ -159,10 +161,29 @@ export default function ShelfView({ entries }: ShelfViewProps) {
           }),
         })
           .then(async (r) => {
-            const j = await r.json();
-            console.log("Render result:", j);
+            const body = await r.json().catch(() => ({}));
+            if (!r.ok) {
+              const message =
+                typeof body.error === "string"
+                  ? body.error
+                  : `Render generation failed (${r.status})`;
+              setRenderError(message);
+              if (typeof window !== "undefined") {
+                window.alert(`Beer added, but the render failed: ${message}`);
+              }
+              return { error: message };
+            }
+            return { error: null };
           })
-          .catch((err) => console.error("Render fetch error:", err));
+          .catch((err) => {
+            const message =
+              err instanceof Error ? err.message : "Render request failed";
+            setRenderError(message);
+            if (typeof window !== "undefined") {
+              window.alert(`Beer added, but the render failed: ${message}`);
+            }
+            return { error: message };
+          });
       }
 
       // 5. Show rating overlay
@@ -224,6 +245,27 @@ export default function ShelfView({ entries }: ShelfViewProps) {
 
   return (
     <>
+      {renderError && (
+        <div
+          className="mx-3 mb-3 rounded-xl px-4 py-3 text-sm"
+          style={{
+            background: "rgba(120, 36, 24, 0.85)",
+            border: "1px solid rgba(220, 100, 80, 0.35)",
+            color: "#f5e6d0",
+          }}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <p>Beer added, but the can render failed: {renderError}</p>
+            <button
+              onClick={() => setRenderError(null)}
+              className="shrink-0 text-xs"
+              style={{ color: "rgba(245, 230, 208, 0.7)" }}
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
       <BeerShelf
         entries={entries}
         onSelectBeer={handleSelectBeer}
@@ -234,6 +276,7 @@ export default function ShelfView({ entries }: ShelfViewProps) {
       <ScanFab onImageCaptured={handleImageCaptured} triggerRef={scanFabRef} />
       {selectedBeer && (
         <BeerDetailSheet
+          key={`${selectedBeer.id}:${selectedBeer.image_url ?? "no-image"}:${beerRatings?.personalRating?.score ?? "no-rating"}`}
           beer={selectedBeer}
           entries={selectedEntries}
           ratings={beerRatings}

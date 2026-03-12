@@ -32,27 +32,33 @@ export default function BeerDetailSheet({
 }: BeerDetailSheetProps) {
   const [personalScore, setPersonalScore] = useState(0);
   const [imgSrc, setImgSrc] = useState<string | null>(null);
-
-  useEffect(() => {
-    setPersonalScore(ratings?.personalRating?.score ?? 0);
-  }, [ratings]);
+  const initialScore = ratings?.personalRating?.score ?? 0;
 
   // Probe render URLs with JS Image()
   useEffect(() => {
     if (!beer) return;
     let cancelled = false;
-    setImgSrc(null);
     const localSrc = `/renders/${beer.id}.png`;
     const apiSrc = `/api/renders?id=${beer.id}`;
-    const img1 = new Image();
-    img1.onload = () => { if (!cancelled) setImgSrc(localSrc); };
-    img1.onerror = () => {
-      const img2 = new Image();
-      img2.onload = () => { if (!cancelled) setImgSrc(apiSrc); };
-      img2.onerror = () => { /* badge stays */ };
-      img2.src = apiSrc;
+    const candidates = [
+      beer.image_url,
+      localSrc,
+      apiSrc,
+    ].filter((src): src is string => Boolean(src));
+
+    const tryLoad = (index: number) => {
+      if (index >= candidates.length) return;
+      const img = new Image();
+      img.onload = () => {
+        if (!cancelled) setImgSrc(candidates[index]);
+      };
+      img.onerror = () => {
+        tryLoad(index + 1);
+      };
+      img.src = candidates[index];
     };
-    img1.src = localSrc;
+
+    tryLoad(0);
     return () => { cancelled = true; };
   }, [beer]);
 
@@ -149,7 +155,7 @@ export default function BeerDetailSheet({
                 Your Rating
               </p>
               <div className="scale-[0.6] origin-top-left -mb-6">
-                <StarSlider value={personalScore} onChange={handleRatingChange} />
+                <StarSlider value={personalScore || initialScore} onChange={handleRatingChange} />
               </div>
             </div>
 

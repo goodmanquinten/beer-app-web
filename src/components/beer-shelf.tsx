@@ -459,25 +459,31 @@ function BeerImage({ beer, canHeight }: { beer: Beer; canHeight: number }) {
 
   useEffect(() => {
     let cancelled = false;
-    setLoadedSrc(null);
 
     const localSrc = `/renders/${beer.id}.png`;
     const apiSrc = `/api/renders?id=${beer.id}`;
+    const candidates = [
+      beer.image_url,
+      localSrc,
+      apiSrc,
+    ].filter((src): src is string => Boolean(src));
 
-    // Try local static file first
-    const img1 = new Image();
-    img1.onload = () => { if (!cancelled) setLoadedSrc(localSrc); };
-    img1.onerror = () => {
-      // Try Supabase Storage via API proxy
-      const img2 = new Image();
-      img2.onload = () => { if (!cancelled) setLoadedSrc(apiSrc); };
-      img2.onerror = () => { /* both failed, badge stays */ };
-      img2.src = apiSrc;
+    const tryLoad = (index: number) => {
+      if (index >= candidates.length) return;
+      const img = new Image();
+      img.onload = () => {
+        if (!cancelled) setLoadedSrc(candidates[index]);
+      };
+      img.onerror = () => {
+        tryLoad(index + 1);
+      };
+      img.src = candidates[index];
     };
-    img1.src = localSrc;
+
+    tryLoad(0);
 
     return () => { cancelled = true; };
-  }, [beer.id]);
+  }, [beer.id, beer.image_url]);
 
   const badgeW = Math.round(canHeight * 0.45);
   const badgeH = Math.round(canHeight * 0.7);

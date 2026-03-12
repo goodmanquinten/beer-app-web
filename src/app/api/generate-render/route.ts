@@ -11,8 +11,13 @@ export const maxDuration = 60;
 const BUCKET = "beer-renders";
 
 function getAdminSupabase() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !serviceKey) {
+    throw new Error(
+      "Render upload requires NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY"
+    );
+  }
   return createAdminClient(url, serviceKey);
 }
 
@@ -37,7 +42,6 @@ async function runPipelineInline(
 
   // Use eval('require') to bypass Turbopack static analysis — these are
   // runtime-only loads from the bundled generator/ directory
-  // eslint-disable-next-line no-eval
   const _require = eval("require") as NodeRequire;
 
   // Pre-inject stub modules into require cache for packages with deep
@@ -160,7 +164,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: pipelineResult.error }, { status: 500 });
     }
 
-    // Upload the render to Supabase Storage for persistence on Vercel
+    // Upload the render to Supabase Storage for persistence on Vercel.
+    // Runtime writes to public/renders are not durable on serverless hosts.
     let publicUrl: string | null = null;
 
     if (fs.existsSync(pipelineResult.renderPath)) {
@@ -177,25 +182,51 @@ export async function POST(req: NextRequest) {
 
       if (uploadError) {
         console.error("Storage upload error:", uploadError);
+        return NextResponse.json(
+          {
+            error:
+              "Render was generated but could not be uploaded to Supabase Storage. Check SUPABASE_SERVICE_ROLE_KEY, bucket name, and Storage permissions.",
+          },
+          { status: 500 }
+        );
       } else {
         const { data: urlData } = admin.storage
           .from(BUCKET)
           .getPublicUrl(storagePath);
         publicUrl = urlData.publicUrl;
 
-        if (publicUrl) {
-          const { error: updateError } = await admin
-            .from("beers")
-            .update({ image_url: publicUrl })
-            .eq("id", beerId);
+        if (!publicUrl) {
+          return NextResponse.json(
+            {
+              error:
+                "Render uploaded but no public URL was returned from Supabase Storage.",
+            },
+            { status: 500 }
+          );
+        }
 
-          if (updateError) {
-            console.error("DB image_url update error:", updateError);
-          }
+        const { error: updateError } = await admin
+          .from("beers")
+          .update({ image_url: publicUrl })
+          .eq("id", beerId);
+
+        if (updateError) {
+          console.error("DB image_url update error:", updateError);
+          return NextResponse.json(
+            {
+              error:
+                "Render uploaded, but the beer record could not be updated with the image URL.",
+            },
+            { status: 500 }
+          );
         }
       }
     } else {
       console.error("Render file not found at:", pipelineResult.renderPath);
+      return NextResponse.json(
+        { error: "Render file was not produced by the generator." },
+        { status: 500 }
+      );
     }
 
     // Cleanup temp files
@@ -207,7 +238,7 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({
-      renderUrl: publicUrl || `/renders/${beerId}.png`,
+      renderUrl: publicUrl,
     });
   } catch (err) {
     console.error("Render generation error:", err);
