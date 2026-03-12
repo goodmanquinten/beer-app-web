@@ -11,7 +11,9 @@ export const maxDuration = 60;
 const BUCKET = "beer-renders";
 const ALPHA_THRESHOLD = 20;
 const SOLID_ALPHA_THRESHOLD = 110;
-const SILHOUETTE_DILATION_RADIUS = 6;
+const SILHOUETTE_DILATION_RADIUS = 4;
+const BASE_PADDING = 5;
+const SIDE_PADDING = 6;
 
 function getAdminSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -83,6 +85,17 @@ async function removeDetachedShadow(imagePath: string) {
     keepSolid[pixel] = 1;
   }
 
+  let solidMinX = width;
+  let solidMaxX = 0;
+  let solidMaxY = 0;
+  for (const pixel of largest.pixels) {
+    const x = pixel % width;
+    const y = Math.floor(pixel / width);
+    if (x < solidMinX) solidMinX = x;
+    if (x > solidMaxX) solidMaxX = x;
+    if (y > solidMaxY) solidMaxY = y;
+  }
+
   const keep = new Uint8Array(width * height);
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
@@ -109,6 +122,18 @@ async function removeDetachedShadow(imagePath: string) {
       }
 
       if (shouldKeep) {
+        const alpha = alphaAt(idx);
+        if (
+          alpha < SOLID_ALPHA_THRESHOLD &&
+          (
+            y > solidMaxY + BASE_PADDING ||
+            (y >= solidMaxY - 2 &&
+              (x < solidMinX - SIDE_PADDING || x > solidMaxX + SIDE_PADDING))
+          )
+        ) {
+          continue;
+        }
+
         keep[idx] = 1;
       }
     }

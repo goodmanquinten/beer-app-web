@@ -15,6 +15,10 @@ interface ShelfViewProps {
 }
 
 type OverlayState = null | "processing" | "rating";
+type RenderNotice =
+  | { kind: "info"; message: string }
+  | { kind: "error"; message: string }
+  | null;
 
 /** localStorage key for manual arrangement */
 const ARRANGEMENT_KEY = "beer-shelf-arrangement";
@@ -32,6 +36,28 @@ function saveArrangement(ids: string[]) {
   try {
     localStorage.setItem(ARRANGEMENT_KEY, JSON.stringify(ids));
   } catch {}
+}
+
+function normalizeBeerText(value: string | null | undefined) {
+  return (value ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function findBestBeerMatch(beers: Beer[], name: string, brewery: string) {
+  const normalizedName = normalizeBeerText(name);
+  const normalizedBrewery = normalizeBeerText(brewery);
+
+  const exactNameAndBrewery = beers.find((beer) =>
+    normalizeBeerText(beer.name) === normalizedName &&
+    normalizeBeerText(beer.brewery) === normalizedBrewery
+  );
+  if (exactNameAndBrewery) return exactNameAndBrewery;
+
+  const exactName = beers.find((beer) =>
+    normalizeBeerText(beer.name) === normalizedName
+  );
+  if (exactName) return exactName;
+
+  return null;
 }
 
 export default function ShelfView({ entries }: ShelfViewProps) {
@@ -52,8 +78,8 @@ export default function ShelfView({ entries }: ShelfViewProps) {
   const [overlayState, setOverlayState] = useState<OverlayState>(null);
   const [scannedBeer, setScannedBeer] = useState<Beer | null>(null);
   const [scannedEntryId, setScannedEntryId] = useState<string | null>(null);
-  const [renderError, setRenderError] = useState<string | null>(null);
-  const renderPromiseRef = useRef<Promise<{ error: string | null }> | null>(null);
+  const [renderNotice, setRenderNotice] = useState<RenderNotice>(null);
+  const renderPromiseRef = useRef<Promise<{ notice: RenderNotice }> | null>(null);
 
   const handleArrangementChange = useCallback((beerIds: string[]) => {
     setArrangement(beerIds);
@@ -98,7 +124,7 @@ export default function ShelfView({ entries }: ShelfViewProps) {
 
   async function handleImageCaptured(file: File) {
     setOverlayState("processing");
-    setRenderError(null);
+    setRenderNotice(null);
 
     const dataUrl = await fileToDataUrl(file);
 
@@ -131,8 +157,13 @@ export default function ShelfView({ entries }: ShelfViewProps) {
       let beer: Beer;
       const searchResult = await searchBeers(name);
 
-      if (searchResult.data && searchResult.data.length > 0) {
-        beer = searchResult.data[0];
+      const matchedBeer =
+        searchResult.data && searchResult.data.length > 0
+          ? findBestBeerMatch(searchResult.data, name, brewery)
+          : null;
+
+      if (matchedBeer) {
+        beer = matchedBeer;
       } else {
         const createResult = await createBeerFromOCR(name, brewery);
         if (createResult.error || !createResult.data) {
@@ -149,46 +180,61 @@ export default function ShelfView({ entries }: ShelfViewProps) {
         return;
       }
 
-      // 4. Start render generation if no image yet
-      if (!beer.image_url) {
-        renderPromiseRef.current = fetch("/api/generate-render", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            beerId: beer.id,
-            imageDataUrl: dataUrl,
-            containerType: "can",
-            beerName: beer.name,
-          }),
-        })
-          .then(async (r) => {
-            const body = await r.json().catch(() => ({}));
-            if (!r.ok) {
-              const message =
-                typeof body.error === "string"
-                  ? body.error
-                  : `Render generation failed (${r.status})`;
-              setRenderError(message);
-              if (typeof window !== "undefined") {
-                window.alert(`Beer added, but the render failed: ${message}`);
-              }
-              return { error: message };
-            }
-            return { error: null };
-          })
-          .catch((err) => {
+      // 4. Start render generation. Rescans should be able to repair old or incorrect renders.
+      renderPromiseRef.current = fetch("/api/generate-render", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          beerId: beer.id,
+          imageDataUrl: dataUrl,
+          containerType: "can",
+          beerName: beer.name,
+        }),
+      })
+        .then(async (r) => {
+          const body = await r.json().catch(() => ({}));
+          if (!r.ok) {
             const message =
-              err instanceof Error ? err.message : "Render request failed";
-            setRenderError(message);
+              typeof body.error === "string"
+                ? body.error
+                : `Render generation failed (${r.status})`;
+            const notice = { kind: "error" as const, message };
+            setRenderNotice(notice);
             if (typeof window !== "undefined") {
               window.alert(`Beer added, but the render failed: ${message}`);
             }
-            return { error: message };
-          });
-      }
+            return { notice };
+          }
+          return { notice: null };
+        })
+        .catch((err) => {
+          const message =
+            err instanceof Error ? err.message : "Render request failed";
+
+          if (message.includes("Failed to fetch")) {
+            const notice = {
+              kind: "info" as const,
+              message: "Beer added. The can render is still processing and should appear shortly.",
+            };
+            setRenderNotice(notice);
+            if (typeof window !== "undefined") {
+              window.setTimeout(() => router.refresh(), 5000);
+              window.setTimeout(() => router.refresh(), 15000);
+              window.setTimeout(() => router.refresh(), 30000);
+            }
+            return { notice };
+          }
+
+          const notice = { kind: "error" as const, message };
+          setRenderNotice(notice);
+          if (typeof window !== "undefined") {
+            window.alert(`Beer added, but the render failed: ${message}`);
+          }
+          return { notice };
+        });
 
       // 5. Show rating overlay
-      setScannedBeer(beer);
+      setScannedBeer({ ...beer, image_url: null });
       setScannedEntryId(entryResult.data.id);
       setOverlayState("rating");
     } catch (err) {
@@ -246,19 +292,29 @@ export default function ShelfView({ entries }: ShelfViewProps) {
 
   return (
     <>
-      {renderError && (
+      {renderNotice && (
         <div
           className="mx-3 mb-3 rounded-xl px-4 py-3 text-sm"
           style={{
-            background: "rgba(120, 36, 24, 0.85)",
-            border: "1px solid rgba(220, 100, 80, 0.35)",
+            background:
+              renderNotice.kind === "error"
+                ? "rgba(120, 36, 24, 0.85)"
+                : "rgba(40, 64, 28, 0.85)",
+            border:
+              renderNotice.kind === "error"
+                ? "1px solid rgba(220, 100, 80, 0.35)"
+                : "1px solid rgba(126, 180, 90, 0.35)",
             color: "#f5e6d0",
           }}
         >
           <div className="flex items-start justify-between gap-3">
-            <p>Beer added, but the can render failed: {renderError}</p>
+            <p>
+              {renderNotice.kind === "error"
+                ? `Beer added, but the can render failed: ${renderNotice.message}`
+                : renderNotice.message}
+            </p>
             <button
-              onClick={() => setRenderError(null)}
+              onClick={() => setRenderNotice(null)}
               className="shrink-0 text-xs"
               style={{ color: "rgba(245, 230, 208, 0.7)" }}
             >
