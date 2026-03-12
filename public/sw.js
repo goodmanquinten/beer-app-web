@@ -1,4 +1,4 @@
-const CACHE_NAME = "beerapp-v1";
+const CACHE_NAME = "beerapp-v2";
 const APP_SHELL = ["/home", "/manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {
