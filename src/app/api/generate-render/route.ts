@@ -10,6 +10,8 @@ export const maxDuration = 60;
 
 const BUCKET = "beer-renders";
 const ALPHA_THRESHOLD = 20;
+const SOLID_ALPHA_THRESHOLD = 110;
+const SILHOUETTE_DILATION_RADIUS = 6;
 
 function getAdminSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -29,7 +31,7 @@ async function removeDetachedShadow(imagePath: string) {
     .toBuffer({ resolveWithObject: true });
 
   const { width, height, channels } = info;
-  const visited = new Uint8Array(width * height);
+  const solidVisited = new Uint8Array(width * height);
   const components: Array<{ pixels: number[]; size: number }> = [];
 
   const indexFor = (x: number, y: number) => y * width + x;
@@ -38,11 +40,11 @@ async function removeDetachedShadow(imagePath: string) {
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const start = indexFor(x, y);
-      if (visited[start] || alphaAt(start) <= ALPHA_THRESHOLD) continue;
+      if (solidVisited[start] || alphaAt(start) < SOLID_ALPHA_THRESHOLD) continue;
 
       const queue = [start];
       const pixels: number[] = [];
-      visited[start] = 1;
+      solidVisited[start] = 1;
 
       while (queue.length > 0) {
         const current = queue.pop()!;
@@ -61,8 +63,8 @@ async function removeDetachedShadow(imagePath: string) {
         for (const [nx, ny] of neighbors) {
           if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
           const next = indexFor(nx, ny);
-          if (visited[next] || alphaAt(next) <= ALPHA_THRESHOLD) continue;
-          visited[next] = 1;
+          if (solidVisited[next] || alphaAt(next) < SOLID_ALPHA_THRESHOLD) continue;
+          solidVisited[next] = 1;
           queue.push(next);
         }
       }
@@ -71,14 +73,45 @@ async function removeDetachedShadow(imagePath: string) {
     }
   }
 
-  if (components.length <= 1) return;
+  if (components.length === 0) return;
 
   const largest = components.reduce((best, component) =>
     component.size > best.size ? component : best
   );
-  const keep = new Uint8Array(width * height);
+  const keepSolid = new Uint8Array(width * height);
   for (const pixel of largest.pixels) {
-    keep[pixel] = 1;
+    keepSolid[pixel] = 1;
+  }
+
+  const keep = new Uint8Array(width * height);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const idx = indexFor(x, y);
+      if (alphaAt(idx) <= ALPHA_THRESHOLD) continue;
+
+      let shouldKeep = false;
+      for (let dy = -SILHOUETTE_DILATION_RADIUS; dy <= SILHOUETTE_DILATION_RADIUS && !shouldKeep; dy++) {
+        const ny = y + dy;
+        if (ny < 0 || ny >= height) continue;
+
+        for (let dx = -SILHOUETTE_DILATION_RADIUS; dx <= SILHOUETTE_DILATION_RADIUS; dx++) {
+          const nx = x + dx;
+          if (nx < 0 || nx >= width) continue;
+          if (dx * dx + dy * dy > SILHOUETTE_DILATION_RADIUS * SILHOUETTE_DILATION_RADIUS) {
+            continue;
+          }
+
+          if (keepSolid[indexFor(nx, ny)]) {
+            shouldKeep = true;
+            break;
+          }
+        }
+      }
+
+      if (shouldKeep) {
+        keep[idx] = 1;
+      }
+    }
   }
 
   for (let idx = 0; idx < width * height; idx++) {
@@ -102,6 +135,7 @@ async function runPipelineInline(
   outputDir: string,
   containerType: string,
   providerName: string,
+  brandName?: string,
 ): Promise<{ renderPath: string } | { error: string }> {
   const genDir = path.join(process.cwd(), "generator");
   const pipelinePath = path.join(genDir, "dist", "pipeline.js");
@@ -152,6 +186,7 @@ async function runPipelineInline(
     outputDir,
     styleVersion: "v1",
     providers: [provider],
+    brandName: brandName || undefined,
   });
 
   // Find best render
@@ -241,7 +276,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  const { beerId, imageDataUrl, containerType = "can" } = await req.json();
+  const { beerId, imageDataUrl, containerType = "can", beerName } = await req.json();
 
   if (!beerId || !imageDataUrl) {
     return NextResponse.json(
@@ -262,7 +297,7 @@ export async function POST(req: NextRequest) {
 
     // Run pipeline inline (same process — avoids Vercel dependency tracing issues)
     const pipelineResult = await runPipelineInline(
-      beerId, inputPath, outputDir, containerType, providerName,
+      beerId, inputPath, outputDir, containerType, providerName, beerName,
     );
 
     if ("error" in pipelineResult) {

@@ -158,6 +158,7 @@ export default function ShelfView({ entries }: ShelfViewProps) {
             beerId: beer.id,
             imageDataUrl: dataUrl,
             containerType: "can",
+            beerName: beer.name,
           }),
         })
           .then(async (r) => {
