@@ -9,6 +9,7 @@ import sharp from "sharp";
 export const maxDuration = 60;
 
 const BUCKET = "beer-renders";
+const ALPHA_THRESHOLD = 20;
 
 function getAdminSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -19,6 +20,75 @@ function getAdminSupabase() {
     );
   }
   return createAdminClient(url, serviceKey);
+}
+
+async function removeDetachedShadow(imagePath: string) {
+  const { data, info } = await sharp(imagePath)
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  const { width, height, channels } = info;
+  const visited = new Uint8Array(width * height);
+  const components: Array<{ pixels: number[]; size: number }> = [];
+
+  const indexFor = (x: number, y: number) => y * width + x;
+  const alphaAt = (idx: number) => data[idx * channels + 3];
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const start = indexFor(x, y);
+      if (visited[start] || alphaAt(start) <= ALPHA_THRESHOLD) continue;
+
+      const queue = [start];
+      const pixels: number[] = [];
+      visited[start] = 1;
+
+      while (queue.length > 0) {
+        const current = queue.pop()!;
+        pixels.push(current);
+
+        const cx = current % width;
+        const cy = Math.floor(current / width);
+
+        const neighbors = [
+          [cx - 1, cy],
+          [cx + 1, cy],
+          [cx, cy - 1],
+          [cx, cy + 1],
+        ];
+
+        for (const [nx, ny] of neighbors) {
+          if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+          const next = indexFor(nx, ny);
+          if (visited[next] || alphaAt(next) <= ALPHA_THRESHOLD) continue;
+          visited[next] = 1;
+          queue.push(next);
+        }
+      }
+
+      components.push({ pixels, size: pixels.length });
+    }
+  }
+
+  if (components.length <= 1) return;
+
+  const largest = components.reduce((best, component) =>
+    component.size > best.size ? component : best
+  );
+  const keep = new Uint8Array(width * height);
+  for (const pixel of largest.pixels) {
+    keep[pixel] = 1;
+  }
+
+  for (let idx = 0; idx < width * height; idx++) {
+    if (keep[idx]) continue;
+    data[idx * channels + 3] = 0;
+  }
+
+  await sharp(data, { raw: { width, height, channels } })
+    .png()
+    .toFile(imagePath);
 }
 
 /**
@@ -120,6 +190,7 @@ async function runPipelineInline(
       .png()
       .toBuffer();
     fs.writeFileSync(finalPath, extended);
+    await removeDetachedShadow(finalPath);
   } catch (trimErr) {
     console.warn("Trim warning:", trimErr instanceof Error ? trimErr.message : trimErr);
   }
