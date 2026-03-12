@@ -111,7 +111,7 @@ export async function POST() {
     return NextResponse.json({ error: listResult.error }, { status: 500 });
   }
 
-  const pngFiles = listResult.data;
+  const pngFiles = listResult.data ?? [];
   const results: Array<{ file: string; status: string }> = [];
 
   for (const file of pngFiles) {
