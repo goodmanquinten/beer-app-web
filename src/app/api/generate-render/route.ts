@@ -70,9 +70,7 @@ async function runPipelineInline(
   };
 
   const pipeline = _require(pipelinePath);
-  const providerMod = _require(path.join(genDir, "dist", "provider", "index.js"));
-
-  const provider = providerMod.createProvider(providerName || "openai");
+  const provider = createProviderForRender(_require, genDir, providerName || "openai");
 
   const result = await pipeline.runPipeline({
     inputPath,
@@ -124,6 +122,37 @@ async function runPipelineInline(
   }
 
   return { renderPath: publicPath };
+}
+
+function createProviderForRender(
+  requireFn: NodeRequire,
+  genDir: string,
+  providerName: string
+) {
+  switch (providerName) {
+    case "openai": {
+      const mod = requireFn(path.join(genDir, "dist", "provider", "openai.js"));
+      return new mod.OpenAIProvider();
+    }
+    case "mock": {
+      const mod = requireFn(path.join(genDir, "dist", "provider", "mock.js"));
+      return new mod.MockProvider();
+    }
+    case "gemini": {
+      const mod = requireFn(path.join(genDir, "dist", "provider", "gemini.js"));
+      return new mod.GeminiProvider();
+    }
+    case "together": {
+      const mod = requireFn(path.join(genDir, "dist", "provider", "together.js"));
+      return new mod.TogetherProvider();
+    }
+    case "real": {
+      const mod = requireFn(path.join(genDir, "dist", "provider", "real.js"));
+      return new mod.RealProvider();
+    }
+    default:
+      throw new Error(`Unknown render provider: ${providerName}`);
+  }
 }
 
 export async function POST(req: NextRequest) {
