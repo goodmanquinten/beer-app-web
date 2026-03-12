@@ -39,6 +39,22 @@ async function runPipelineInline(
   // runtime-only loads from the bundled generator/ directory
   // eslint-disable-next-line no-eval
   const _require = eval("require") as NodeRequire;
+
+  // Pre-inject a stub palette module into require cache.
+  // node-vibrant has 50+ transitive deps that can't all be traced on Vercel.
+  // The palette (dominant colors) is used in the AI prompt but isn't critical —
+  // a warm beer-themed fallback works fine.
+  const Module = _require("module");
+  const paletteCachePath = path.join(genDir, "dist", "palette.js");
+  Module._cache[paletteCachePath] = {
+    id: paletteCachePath,
+    filename: paletteCachePath,
+    loaded: true,
+    exports: {
+      extractPalette: async () => ["#c4873a", "#a06830", "#7a4f25", "#f5e6d0", "#1a1a1a"],
+    },
+  };
+
   const pipeline = _require(pipelinePath);
   const providerMod = _require(path.join(genDir, "dist", "provider", "index.js"));
   const ocrMod = _require(path.join(genDir, "dist", "ocr.js"));
@@ -47,19 +63,6 @@ async function runPipelineInline(
   ocrMod.spellCheckRender = async () => ({
     total_words: 0, bad_words: [], good_words: [], score: 1,
   });
-
-  // Wrap palette extraction with fallback — node-vibrant has deep deps
-  // that may not all be traced on Vercel. Palette is nice-to-have.
-  const paletteMod = _require(path.join(genDir, "dist", "palette.js"));
-  const origExtractPalette = paletteMod.extractPalette;
-  paletteMod.extractPalette = async (...args: unknown[]) => {
-    try {
-      return await origExtractPalette(...args);
-    } catch (e) {
-      console.warn("Palette extraction fallback:", e instanceof Error ? e.message : e);
-      return ["#c4873a", "#a06830", "#7a4f25", "#f5e6d0", "#1a1a1a"];
-    }
-  };
 
   const provider = providerMod.createProvider(providerName || "openai");
 

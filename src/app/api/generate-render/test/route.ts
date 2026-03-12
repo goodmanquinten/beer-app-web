@@ -10,47 +10,52 @@ import * as path from "path";
 export async function GET() {
   const results: Record<string, string> = {};
 
+  // eslint-disable-next-line no-eval
+  const _require = eval("require") as NodeRequire;
   const genDir = path.join(process.cwd(), "generator");
 
   // Check generator files exist
   const pipelinePath = path.join(genDir, "dist", "pipeline.js");
   results.pipeline = fs.existsSync(pipelinePath) ? "OK" : "MISSING";
+  results.styles = fs.existsSync(path.join(genDir, "styles", "v1", "knobs.json")) ? "OK" : "MISSING";
+  results.template = fs.existsSync(path.join(genDir, "templates", "can_template.png")) ? "OK" : "MISSING";
 
-  const stylePath = path.join(genDir, "styles", "v1", "knobs.json");
-  results.styles = fs.existsSync(stylePath) ? "OK" : "MISSING";
+  // Pre-inject palette stub (node-vibrant has too many transitive deps)
+  const Module = _require("module");
+  const paletteCachePath = path.join(genDir, "dist", "palette.js");
+  Module._cache[paletteCachePath] = {
+    id: paletteCachePath,
+    filename: paletteCachePath,
+    loaded: true,
+    exports: {
+      extractPalette: async () => ["#c4873a", "#a06830", "#7a4f25", "#f5e6d0", "#1a1a1a"],
+    },
+  };
 
-  const templatePath = path.join(genDir, "templates", "can_template.png");
-  results.template = fs.existsSync(templatePath) ? "OK" : "MISSING";
-
-  // Try loading modules
+  // Try loading pipeline (with palette stubbed out)
   try {
-    // eslint-disable-next-line no-eval
-    const _require = eval("require") as NodeRequire;
     _require(pipelinePath);
     results.pipelineLoad = "OK";
   } catch (e) {
     results.pipelineLoad = `FAIL: ${e instanceof Error ? e.message : String(e)}`;
   }
 
+  // Test sharp
   try {
-    // eslint-disable-next-line no-eval
-    const _require = eval("require") as NodeRequire;
     _require("sharp");
     results.sharp = "OK";
   } catch (e) {
     results.sharp = `FAIL: ${e instanceof Error ? e.message : String(e)}`;
   }
 
+  // Test OpenAI provider
   try {
-    // eslint-disable-next-line no-eval
-    const _require = eval("require") as NodeRequire;
-    _require("node-vibrant");
-    results.vibrant = "OK";
+    _require(path.join(genDir, "dist", "provider", "openai.js"));
+    results.openaiProvider = "OK";
   } catch (e) {
-    results.vibrant = `FAIL: ${e instanceof Error ? e.message : String(e)}`;
+    results.openaiProvider = `FAIL: ${e instanceof Error ? e.message : String(e)}`;
   }
 
-  // Check OPENAI_API_KEY exists
   results.openaiKey = process.env.OPENAI_API_KEY ? "SET" : "MISSING";
   results.serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY ? "SET" : "MISSING";
 
