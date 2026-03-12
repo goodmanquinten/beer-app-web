@@ -16,7 +16,8 @@ function getAdminSupabase() {
   return createAdminClient(url, serviceKey);
 }
 
-async function listAllPngFiles(admin: ReturnType<typeof createAdminClient>) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function listAllPngFiles(admin: any) {
   const allFiles: Array<{ name: string }> = [];
   const pageSize = 100;
   let offset = 0;
