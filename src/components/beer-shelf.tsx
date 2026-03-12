@@ -520,7 +520,6 @@ function BeerImage({ beer, canHeight }: { beer: Beer; canHeight: number }) {
         height: canHeight,
         width: "auto",
         objectFit: "contain",
-        filter: "drop-shadow(1px 3px 4px rgba(0,0,0,0.5))",
       }}
       draggable={false}
     />

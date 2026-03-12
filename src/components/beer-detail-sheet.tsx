@@ -106,7 +106,6 @@ export default function BeerDetailSheet({
                 src={imgSrc}
                 alt={beer.name}
                 className="w-full h-auto object-contain max-h-56"
-                style={{ filter: "drop-shadow(2px 4px 8px rgba(0,0,0,0.6))" }}
               />
             ) : (
               <div
