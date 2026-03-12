@@ -31,12 +31,30 @@ export default function BeerDetailSheet({
   onRatingChange,
 }: BeerDetailSheetProps) {
   const [personalScore, setPersonalScore] = useState(0);
-  const [imgPhase, setImgPhase] = useState<"local" | "remote" | "failed">("local");
+  const [imgSrc, setImgSrc] = useState<string | null>(null);
 
   useEffect(() => {
     setPersonalScore(ratings?.personalRating?.score ?? 0);
-    setImgPhase("local");
-  }, [ratings, beer]);
+  }, [ratings]);
+
+  // Probe render URLs with JS Image()
+  useEffect(() => {
+    if (!beer) return;
+    let cancelled = false;
+    setImgSrc(null);
+    const localSrc = `/renders/${beer.id}.png`;
+    const apiSrc = `/api/renders?id=${beer.id}`;
+    const img1 = new Image();
+    img1.onload = () => { if (!cancelled) setImgSrc(localSrc); };
+    img1.onerror = () => {
+      const img2 = new Image();
+      img2.onload = () => { if (!cancelled) setImgSrc(apiSrc); };
+      img2.onerror = () => { /* badge stays */ };
+      img2.src = apiSrc;
+    };
+    img1.src = localSrc;
+    return () => { cancelled = true; };
+  }, [beer]);
 
   if (!beer) return null;
 
@@ -45,8 +63,6 @@ export default function BeerDetailSheet({
     entries.length > 0
       ? new Date(entries[0].created_at).toLocaleDateString()
       : null;
-
-  const renderSrc = `/renders/${beer.id}.png`;
 
   function handleRatingChange(score: number) {
     setPersonalScore(score);
@@ -78,21 +94,13 @@ export default function BeerDetailSheet({
         <div className="flex p-5 gap-5">
           {/* Left: Can render (~40%) */}
           <div className="w-[38%] flex-shrink-0 flex items-center justify-center">
-            {imgPhase !== "failed" ? (
+            {imgSrc ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
-                key={`${beer.id}-${imgPhase}`}
-                src={imgPhase === "local" ? renderSrc : `/api/renders?id=${beer.id}`}
-                alt=""
+                src={imgSrc}
+                alt={beer.name}
                 className="w-full h-auto object-contain max-h-56"
                 style={{ filter: "drop-shadow(2px 4px 8px rgba(0,0,0,0.6))" }}
-                onError={() => {
-                  if (imgPhase === "local") {
-                    setImgPhase("remote");
-                  } else {
-                    setImgPhase("failed");
-                  }
-                }}
               />
             ) : (
               <div

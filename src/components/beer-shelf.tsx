@@ -454,35 +454,36 @@ function ShelfSlot({
 // ─── Beer Image ──────────────────────────────────────────────────────────────
 
 function BeerImage({ beer, canHeight }: { beer: Beer; canHeight: number }) {
-  // Phase: "local" tries /renders/{id}.png, "api" tries /api/renders?id={id} (Supabase), "failed" shows badge
-  const [phase, setPhase] = useState<"local" | "api" | "failed">("local");
-  const [retryCount, setRetryCount] = useState(0);
+  // Probe image URLs with JS Image(), show badge until a working URL is confirmed
+  const [loadedSrc, setLoadedSrc] = useState<string | null>(null);
 
-  // Reset when beer changes
   useEffect(() => {
-    setPhase("local");
-    setRetryCount(0);
+    let cancelled = false;
+    setLoadedSrc(null);
+
+    const localSrc = `/renders/${beer.id}.png`;
+    const apiSrc = `/api/renders?id=${beer.id}`;
+
+    // Try local static file first
+    const img1 = new Image();
+    img1.onload = () => { if (!cancelled) setLoadedSrc(localSrc); };
+    img1.onerror = () => {
+      // Try Supabase Storage via API proxy
+      const img2 = new Image();
+      img2.onload = () => { if (!cancelled) setLoadedSrc(apiSrc); };
+      img2.onerror = () => { /* both failed, badge stays */ };
+      img2.src = apiSrc;
+    };
+    img1.src = localSrc;
+
+    return () => { cancelled = true; };
   }, [beer.id]);
-
-  useEffect(() => {
-    if (phase !== "failed") return;
-    const timer = setTimeout(() => {
-      setPhase("local");
-      setRetryCount((c) => c + 1);
-    }, 15000);
-    return () => clearTimeout(timer);
-  }, [phase, retryCount]);
-
-  const src =
-    phase === "local"
-      ? `/renders/${beer.id}.png?v=${retryCount}`
-      : `/api/renders?id=${beer.id}&v=${retryCount}`;
 
   const badgeW = Math.round(canHeight * 0.45);
   const badgeH = Math.round(canHeight * 0.7);
   const fontSize = canHeight >= 96 ? 10 : canHeight >= 76 ? 9 : 8;
 
-  if (phase === "failed") {
+  if (!loadedSrc) {
     return (
       <div
         className="rounded-sm flex items-center justify-center"
@@ -506,22 +507,14 @@ function BeerImage({ beer, canHeight }: { beer: Beer; canHeight: number }) {
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img
-      key={`${beer.id}-${phase}-${retryCount}`}
-      src={src}
-      alt=""
+      src={loadedSrc}
+      alt={beer.name}
       className="block pointer-events-none"
       style={{
         height: canHeight,
         width: "auto",
         objectFit: "contain",
         filter: "drop-shadow(1px 3px 4px rgba(0,0,0,0.5))",
-      }}
-      onError={() => {
-        if (phase === "local") {
-          setPhase("api");
-        } else {
-          setPhase("failed");
-        }
       }}
       draggable={false}
     />
