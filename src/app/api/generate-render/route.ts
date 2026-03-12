@@ -10,31 +10,40 @@ export const maxDuration = 60;
 
 const BUCKET = "beer-renders";
 
+function getAdminSupabase() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+  return createAdminClient(url, serviceKey);
+}
+
 function runScript(args: string[], env: Record<string, string>): Promise<string> {
   return new Promise((resolve, reject) => {
     const scriptPath = path.join(process.cwd(), "scripts", "run-render.js");
+    console.log("Running render script:", scriptPath);
+    console.log("CWD:", process.cwd());
+    console.log("Generator exists:", fs.existsSync(path.join(process.cwd(), "generator", "dist", "pipeline.js")));
+
     execFile("node", [scriptPath, ...args], {
       env: { ...process.env, ...env },
-      timeout: 120000,
+      timeout: 55000, // Stay under Vercel's 60s limit
     }, (error, stdout, stderr) => {
-      if (stderr) console.log("Pipeline log:", stderr.slice(0, 500));
+      if (stderr) console.log("Pipeline log:", stderr.slice(0, 1000));
       const output = stdout.trim();
-      if (error && !output) {
-        reject(new Error(error.message));
-      } else if (!output) {
+      console.log("Pipeline stdout:", output.slice(0, 500));
+      if (error) {
+        console.error("Pipeline exec error:", error.message);
+        if (!output) {
+          reject(new Error(error.message));
+          return;
+        }
+      }
+      if (!output) {
         reject(new Error("No output from render script"));
       } else {
         resolve(output);
       }
     });
   });
-}
-
-async function ensureBucket(supabase: ReturnType<typeof createAdminClient>) {
-  const { data: buckets } = await supabase.storage.listBuckets();
-  if (buckets && !buckets.find((b) => b.name === BUCKET)) {
-    await supabase.storage.createBucket(BUCKET, { public: true });
-  }
 }
 
 export async function POST(req: NextRequest) {
@@ -85,11 +94,11 @@ export async function POST(req: NextRequest) {
       const fileBuffer = fs.readFileSync(localRenderPath);
       const storagePath = `${beerId}.png`;
 
-      // Ensure bucket exists
-      await ensureBucket(supabase as unknown as ReturnType<typeof createAdminClient>);
+      // Use admin client for storage operations (bypasses RLS)
+      const admin = getAdminSupabase();
 
       // Upload (upsert) to Supabase Storage
-      const { error: uploadError } = await supabase.storage
+      const { error: uploadError } = await admin.storage
         .from(BUCKET)
         .upload(storagePath, fileBuffer, {
           contentType: "image/png",
@@ -100,14 +109,14 @@ export async function POST(req: NextRequest) {
         console.error("Storage upload error:", uploadError);
       } else {
         // Get the public URL
-        const { data: urlData } = supabase.storage
+        const { data: urlData } = admin.storage
           .from(BUCKET)
           .getPublicUrl(storagePath);
         publicUrl = urlData.publicUrl;
 
         // Update the beer's image_url in the database
         if (publicUrl) {
-          const { error: updateError } = await supabase
+          const { error: updateError } = await admin
             .from("beers")
             .update({ image_url: publicUrl })
             .eq("id", beerId);
@@ -117,6 +126,8 @@ export async function POST(req: NextRequest) {
           }
         }
       }
+    } else {
+      console.error("Render file not found at:", localRenderPath);
     }
 
     // Cleanup temp files
@@ -133,7 +144,7 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     console.error("Render generation error:", err);
     return NextResponse.json(
-      { error: "Render generation failed" },
+      { error: err instanceof Error ? err.message : "Render generation failed" },
       { status: 500 }
     );
   }
