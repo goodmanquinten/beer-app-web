@@ -48,6 +48,19 @@ async function runPipelineInline(
     total_words: 0, bad_words: [], good_words: [], score: 1,
   });
 
+  // Wrap palette extraction with fallback — node-vibrant has deep deps
+  // that may not all be traced on Vercel. Palette is nice-to-have.
+  const paletteMod = _require(path.join(genDir, "dist", "palette.js"));
+  const origExtractPalette = paletteMod.extractPalette;
+  paletteMod.extractPalette = async (...args: unknown[]) => {
+    try {
+      return await origExtractPalette(...args);
+    } catch (e) {
+      console.warn("Palette extraction fallback:", e instanceof Error ? e.message : e);
+      return ["#c4873a", "#a06830", "#7a4f25", "#f5e6d0", "#1a1a1a"];
+    }
+  };
+
   const provider = providerMod.createProvider(providerName || "openai");
 
   const result = await pipeline.runPipeline({
