@@ -6,6 +6,12 @@ import * as path from "path";
 import * as os from "os";
 import { execFile } from "child_process";
 
+// Force Next.js file tracer to include pipeline dependencies and all their
+// transitive deps (e.g. detect-libc, color, semver, @jimp/*).
+// These are used by the child process (scripts/run-render.js → generator/*).
+import "sharp";
+import "node-vibrant";
+
 export const maxDuration = 60;
 
 const BUCKET = "beer-renders";
