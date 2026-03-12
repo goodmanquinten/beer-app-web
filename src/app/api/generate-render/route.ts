@@ -40,29 +40,33 @@ async function runPipelineInline(
   // eslint-disable-next-line no-eval
   const _require = eval("require") as NodeRequire;
 
-  // Pre-inject a stub palette module into require cache.
-  // node-vibrant has 50+ transitive deps that can't all be traced on Vercel.
-  // The palette (dominant colors) is used in the AI prompt but isn't critical —
-  // a warm beer-themed fallback works fine.
+  // Pre-inject stub modules into require cache for packages with deep
+  // transitive deps that can't be fully traced on Vercel.
   const Module = _require("module");
+
+  // Stub palette: node-vibrant has 50+ transitive deps. Use fallback colors.
   const paletteCachePath = path.join(genDir, "dist", "palette.js");
   Module._cache[paletteCachePath] = {
-    id: paletteCachePath,
-    filename: paletteCachePath,
-    loaded: true,
+    id: paletteCachePath, filename: paletteCachePath, loaded: true,
     exports: {
       extractPalette: async () => ["#c4873a", "#a06830", "#7a4f25", "#f5e6d0", "#1a1a1a"],
     },
   };
 
+  // Stub OCR: tesseract.js has heavy deps + needs model download. Not needed
+  // since extractOcrTokens is already stubbed and we skip spell-check.
+  const ocrCachePath = path.join(genDir, "dist", "ocr.js");
+  Module._cache[ocrCachePath] = {
+    id: ocrCachePath, filename: ocrCachePath, loaded: true,
+    exports: {
+      extractOcrTokens: async () => ({ brand_tokens: [], variant_tokens: [] }),
+      ocrImage: async () => [],
+      spellCheckRender: async () => ({ total_words: 0, bad_words: [], good_words: [], score: 1 }),
+    },
+  };
+
   const pipeline = _require(pipelinePath);
   const providerMod = _require(path.join(genDir, "dist", "provider", "index.js"));
-  const ocrMod = _require(path.join(genDir, "dist", "ocr.js"));
-
-  // Skip spell-check to save ~15s (tesseract download + OCR on Vercel)
-  ocrMod.spellCheckRender = async () => ({
-    total_words: 0, bad_words: [], good_words: [], score: 1,
-  });
 
   const provider = providerMod.createProvider(providerName || "openai");
 

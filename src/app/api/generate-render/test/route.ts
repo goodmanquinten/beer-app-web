@@ -20,15 +20,20 @@ export async function GET() {
   results.styles = fs.existsSync(path.join(genDir, "styles", "v1", "knobs.json")) ? "OK" : "MISSING";
   results.template = fs.existsSync(path.join(genDir, "templates", "can_template.png")) ? "OK" : "MISSING";
 
-  // Pre-inject palette stub (node-vibrant has too many transitive deps)
+  // Pre-inject stubs for modules with deep transitive deps
   const Module = _require("module");
   const paletteCachePath = path.join(genDir, "dist", "palette.js");
   Module._cache[paletteCachePath] = {
-    id: paletteCachePath,
-    filename: paletteCachePath,
-    loaded: true,
+    id: paletteCachePath, filename: paletteCachePath, loaded: true,
+    exports: { extractPalette: async () => ["#c4873a", "#a06830", "#7a4f25", "#f5e6d0", "#1a1a1a"] },
+  };
+  const ocrCachePath = path.join(genDir, "dist", "ocr.js");
+  Module._cache[ocrCachePath] = {
+    id: ocrCachePath, filename: ocrCachePath, loaded: true,
     exports: {
-      extractPalette: async () => ["#c4873a", "#a06830", "#7a4f25", "#f5e6d0", "#1a1a1a"],
+      extractOcrTokens: async () => ({ brand_tokens: [], variant_tokens: [] }),
+      ocrImage: async () => [],
+      spellCheckRender: async () => ({ total_words: 0, bad_words: [], good_words: [], score: 1 }),
     },
   };
 
