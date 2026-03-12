@@ -106,26 +106,25 @@ async function runPipelineInline(
     return { error: "No render produced: " + errDetails };
   }
 
-  // Copy to public/renders/ and trim
-  const rendersDir = path.join(process.cwd(), "public", "renders");
-  fs.mkdirSync(rendersDir, { recursive: true });
-  const publicPath = path.join(rendersDir, `${beerId}.png`);
-  fs.copyFileSync(best.render_png, publicPath);
+  // Keep the finalized render in the temp output directory. Vercel's deployed
+  // filesystem is read-only, so runtime writes to public/ are not allowed.
+  const finalPath = path.join(outputDir, `${beerId}.png`);
+  fs.copyFileSync(best.render_png, finalPath);
 
   // Trim transparent padding so the can fills the image
   try {
-    const trimmed = await sharp(publicPath).trim({ threshold: 10 }).toBuffer();
+    const trimmed = await sharp(finalPath).trim({ threshold: 10 }).toBuffer();
     const margin = 20;
     const extended = await sharp(trimmed)
       .extend({ top: margin, bottom: margin, left: margin, right: margin, background: { r: 0, g: 0, b: 0, alpha: 0 } })
       .png()
       .toBuffer();
-    fs.writeFileSync(publicPath, extended);
+    fs.writeFileSync(finalPath, extended);
   } catch (trimErr) {
     console.warn("Trim warning:", trimErr instanceof Error ? trimErr.message : trimErr);
   }
 
-  return { renderPath: publicPath };
+  return { renderPath: finalPath };
 }
 
 function createProviderForRender(
