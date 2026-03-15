@@ -14,6 +14,7 @@ const SOLID_ALPHA_THRESHOLD = 110;
 const SILHOUETTE_DILATION_RADIUS = 4;
 const BASE_PADDING = 5;
 const SIDE_PADDING = 6;
+const SHADOW_ALPHA_THRESHOLD = 190;
 
 function getAdminSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -124,8 +125,9 @@ async function removeDetachedShadow(imagePath: string) {
       if (shouldKeep) {
         const alpha = alphaAt(idx);
         if (
-          alpha < SOLID_ALPHA_THRESHOLD &&
+          alpha < SHADOW_ALPHA_THRESHOLD &&
           (
+            y > solidMaxY + 1 ||
             y > solidMaxY + BASE_PADDING ||
             (y >= solidMaxY - 2 &&
               (x < solidMinX - SIDE_PADDING || x > solidMaxX + SIDE_PADDING))

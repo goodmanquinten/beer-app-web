@@ -2,6 +2,50 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { createBeerLoggedActivity, createBeerRatedActivity, checkAndCreateMilestone } from "@/actions/activities";
+import type { UserShelfItem } from "@/lib/types/database";
+
+async function ensureShelfItem(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  beerId: string
+) {
+  const { data: existing, error: existingError } = await supabase
+    .from("user_shelf_items")
+    .select("beer_id")
+    .eq("user_id", userId)
+    .eq("beer_id", beerId)
+    .maybeSingle();
+
+  if (existingError) return { error: existingError.message };
+  if (existing) return { success: true };
+
+  const { data: shelfItems, error: shelfError } = await supabase
+    .from("user_shelf_items")
+    .select("sort_order")
+    .eq("user_id", userId)
+    .order("sort_order", { ascending: false })
+    .limit(1);
+
+  if (shelfError) return { error: shelfError.message };
+
+  const nextSortOrder = typeof shelfItems?.[0]?.sort_order === "number"
+    ? shelfItems[0].sort_order + 1
+    : 0;
+
+  const { error: insertError } = await supabase
+    .from("user_shelf_items")
+    .insert({
+      user_id: userId,
+      beer_id: beerId,
+      sort_order: nextSortOrder,
+    });
+
+  if (insertError && insertError.code !== "23505") {
+    return { error: insertError.message };
+  }
+
+  return { success: true };
+}
 
 export async function createEntry(beerId: string, notes?: string, location?: string) {
   const supabase = await createClient();
@@ -23,6 +67,9 @@ export async function createEntry(beerId: string, notes?: string, location?: str
     .single();
 
   if (error) return { error: error.message };
+
+  // Shelf item creation is best-effort — the entry already exists at this point
+  await ensureShelfItem(supabase, user.id, beerId).catch(() => {});
 
   // Create activity and check milestones (fire and forget)
   const { data: beer } = await supabase
@@ -110,6 +157,14 @@ export async function removeBeerFromShelf(beerId: string) {
     .eq("user_id", user.id);
 
   if (error) return { error: error.message };
+
+  const { error: shelfError } = await supabase
+    .from("user_shelf_items")
+    .delete()
+    .eq("beer_id", beerId)
+    .eq("user_id", user.id);
+
+  if (shelfError) return { error: shelfError.message };
   return { success: true };
 }
 
@@ -127,7 +182,86 @@ export async function removeAllFromShelf() {
     .eq("user_id", user.id);
 
   if (error) return { error: error.message };
+
+  const { error: shelfError } = await supabase
+    .from("user_shelf_items")
+    .delete()
+    .eq("user_id", user.id);
+
+  if (shelfError) return { error: shelfError.message };
   return { success: true };
+}
+
+export async function getUserShelfItems() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) return { error: "Not authenticated" };
+
+  const { data, error } = await supabase
+    .from("user_shelf_items")
+    .select("user_id, beer_id, sort_order, created_at, beer:beers(*)")
+    .eq("user_id", user.id)
+    .order("sort_order", { ascending: true });
+
+  if (error) return { error: error.message };
+
+  // Supabase joins may return beer as array or object depending on PostgREST;
+  // normalize to single Beer object to match UserShelfItem type
+  const items: UserShelfItem[] = (data ?? []).map((row) => ({
+    user_id: row.user_id,
+    beer_id: row.beer_id,
+    sort_order: row.sort_order,
+    created_at: row.created_at,
+    beer: Array.isArray(row.beer) ? row.beer[0] : row.beer,
+  }));
+
+  return { data: items };
+}
+
+export async function updateShelfArrangement(beerIds: string[]) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) return { error: "Not authenticated" };
+
+  const normalizedIds = Array.from(
+    new Set(beerIds.map((beerId) => beerId.trim()).filter(Boolean))
+  );
+
+  const { data: existingItems, error: existingError } = await supabase
+    .from("user_shelf_items")
+    .select("beer_id")
+    .eq("user_id", user.id);
+
+  if (existingError) return { error: existingError.message };
+
+  const existingIds = new Set((existingItems ?? []).map((item) => item.beer_id));
+  const orderedIds = normalizedIds.filter((beerId) => existingIds.has(beerId));
+
+  const missingIds = Array.from(existingIds).filter(
+    (beerId) => !orderedIds.includes(beerId)
+  );
+
+  const finalIds = [...orderedIds, ...missingIds];
+
+  const rows = finalIds.map((beerId, index) => ({
+    user_id: user.id,
+    beer_id: beerId,
+    sort_order: index,
+  }));
+
+  const { error: upsertError } = await supabase
+    .from("user_shelf_items")
+    .upsert(rows, { onConflict: "user_id,beer_id" });
+
+  if (upsertError) return { error: upsertError.message };
+
+  return { data: finalIds };
 }
 
 export async function getBeerRatings(beerId: string) {
@@ -231,13 +365,5 @@ export async function getUserEntries() {
     .order("created_at", { ascending: false });
 
   if (error) return { error: error.message };
-  // Debug: log beer image_urls
-  if (data) {
-    for (const entry of data) {
-      if (entry.beer) {
-        console.log(`[getUserEntries] beer=${entry.beer.name} image_url=${entry.beer.image_url}`);
-      }
-    }
-  }
   return { data };
 }

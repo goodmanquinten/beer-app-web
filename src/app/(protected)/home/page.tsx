@@ -1,12 +1,16 @@
-import { getUserEntries } from "@/actions/entries";
+import { getUserEntries, getUserShelfItems } from "@/actions/entries";
 import Link from "next/link";
 import ShelfView from "./shelf-view";
 
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
-  const { data: entries, error } = await getUserEntries();
-  const uniqueCount = new Set((entries ?? []).map((e) => e.beer_id)).size;
+  const [{ data: entries, error: entriesError }, { data: shelfItems, error: shelfError }] =
+    await Promise.all([getUserEntries(), getUserShelfItems()]);
+  const uniqueCount = shelfItems?.length ?? new Set((entries ?? []).map((e) => e.beer_id)).size;
+  const error = entriesError ?? shelfError;
+  const shelfBeerIds = shelfItems?.map((item) => item.beer_id) ?? [];
+
 
   return (
     <div className="shelf-backdrop">
@@ -55,7 +59,7 @@ export default async function HomePage() {
           {error && (
             <p className="text-red-400 text-sm px-2 pb-2">{error}</p>
           )}
-          <ShelfView entries={entries ?? []} />
+          <ShelfView entries={entries ?? []} shelfBeerIds={shelfBeerIds} />
         </div>
       </div>
     </div>

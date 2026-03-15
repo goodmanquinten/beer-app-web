@@ -14,6 +14,7 @@ export interface Beer {
   style: string;
   abv: number | null;
   image_url: string | null;
+  container_type: "can" | "bottle";
   created_at: string;
   created_by: string;
 }
@@ -29,6 +30,14 @@ export interface BeerEntry {
   beer?: Beer;
   rating?: Rating;
   profile?: UserProfile;
+}
+
+export interface UserShelfItem {
+  user_id: string;
+  beer_id: string;
+  sort_order: number;
+  created_at: string;
+  beer?: Beer;
 }
 
 export interface Rating {

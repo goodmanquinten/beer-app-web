@@ -1,6 +1,15 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import type { Beer } from "@/lib/types/database";
+
+function isMissingContainerTypeColumn(message: string | undefined) {
+  return (message ?? "").toLowerCase().includes("container_type");
+}
+
+function getMissingContainerTypeError() {
+  return "Bottle/can variants require the container_type migration in Supabase. Apply migration 004_beer_container_type.sql.";
+}
 
 export async function createBeer(formData: FormData) {
   const supabase = await createClient();
@@ -17,32 +26,50 @@ export async function createBeer(formData: FormData) {
       brewery: formData.get("brewery") as string,
       style: formData.get("style") as string,
       abv: formData.get("abv") ? parseFloat(formData.get("abv") as string) : null,
+      container_type: (formData.get("container_type") as string) || "can",
       created_by: user.id,
     })
     .select()
     .single();
 
+  if (error && isMissingContainerTypeColumn(error.message)) {
+    return { error: getMissingContainerTypeError() };
+  }
+
   if (error) return { error: error.message };
   return { data };
 }
 
-export async function searchBeers(query: string) {
+export async function searchBeers(
+  query: string,
+  options?: { brewery?: string; containerType?: Beer["container_type"] }
+) {
   const supabase = await createClient();
 
-  const { data, error } = await supabase
+  let request = supabase
     .from("beers")
     .select("*")
     .ilike("name", `%${query}%`)
     .limit(20);
 
+  if (options?.brewery) {
+    request = request.ilike("brewery", `%${options.brewery}%`);
+  }
+
+  if (options?.containerType) {
+    request = request.eq("container_type", options.containerType);
+  }
+
+  const { data, error } = await request;
+
+  if (error && isMissingContainerTypeColumn(error.message)) {
+    return { error: getMissingContainerTypeError() };
+  }
+
   if (error) return { error: error.message };
   return { data };
 }
 
-/**
- * Search beers using multiple terms from OCR output.
- * Queries each term against name and brewery, then deduplicates results.
- */
 export async function updateBeerImageUrl(beerId: string, imageUrl: string) {
   const supabase = await createClient();
   const {
@@ -51,31 +78,25 @@ export async function updateBeerImageUrl(beerId: string, imageUrl: string) {
 
   if (!user) return { error: "Not authenticated" };
 
-  // Use .select() to verify the update actually affected a row
   const { data, error } = await supabase
     .from("beers")
     .update({ image_url: imageUrl })
     .eq("id", beerId)
     .select("id, image_url");
 
-  console.log("[updateBeerImageUrl] beerId:", beerId, "imageUrl:", imageUrl, "user:", user.id);
-  console.log("[updateBeerImageUrl] result data:", data, "error:", error);
-
   if (error) return { error: error.message };
   if (!data || data.length === 0) {
-    // RLS blocked the update — try with created_by filter to debug
-    const { data: beer } = await supabase
-      .from("beers")
-      .select("id, created_by, image_url")
-      .eq("id", beerId)
-      .single();
-    console.log("[updateBeerImageUrl] beer record:", beer, "current user:", user.id);
-    return { error: "Update blocked by RLS — no rows affected" };
+    return { error: "Update blocked by RLS - no rows affected" };
   }
   return { success: true, updated: data[0] };
 }
 
-export async function createBeerFromOCR(name: string, brewery: string) {
+export async function createBeerFromOCR(
+  name: string,
+  brewery: string,
+  style: string,
+  containerType: Beer["container_type"]
+) {
   const supabase = await createClient();
   const {
     data: { user },
@@ -88,35 +109,52 @@ export async function createBeerFromOCR(name: string, brewery: string) {
     .insert({
       name,
       brewery,
-      style: "Beer",
+      style: style || "Beer",
+      container_type: containerType,
       created_by: user.id,
     })
     .select()
     .single();
 
+  if (error && isMissingContainerTypeColumn(error.message)) {
+    return { error: getMissingContainerTypeError() };
+  }
+
   if (error) return { error: error.message };
   return { data };
 }
 
-export async function searchBeersByTerms(terms: string[]) {
+export async function searchBeersByTerms(
+  terms: string[],
+  options?: { containerType?: Beer["container_type"] }
+) {
   const supabase = await createClient();
 
   if (terms.length === 0) return { data: [] };
 
-  // Build OR filter: match any term against name or brewery
   const orFilters = terms
-    .slice(0, 10) // limit to avoid huge queries
+    .slice(0, 10)
     .flatMap((term) => [
       `name.ilike.%${term}%`,
       `brewery.ilike.%${term}%`,
     ])
     .join(",");
 
-  const { data, error } = await supabase
+  let request = supabase
     .from("beers")
     .select("*")
     .or(orFilters)
     .limit(20);
+
+  if (options?.containerType) {
+    request = request.eq("container_type", options.containerType);
+  }
+
+  const { data, error } = await request;
+
+  if (error && isMissingContainerTypeColumn(error.message)) {
+    return { error: getMissingContainerTypeError() };
+  }
 
   if (error) return { error: error.message };
   return { data };

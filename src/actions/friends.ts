@@ -77,6 +77,65 @@ export async function getOutgoingRequests() {
   return { data: data as Friendship[] };
 }
 
+export async function getFriendSuggestions(limit = 6) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Not authenticated" };
+
+  const { data: relationships, error: relationshipsError } = await supabase
+    .from("friendships")
+    .select("requester_id, addressee_id")
+    .or(`requester_id.eq.${user.id},addressee_id.eq.${user.id}`);
+
+  if (relationshipsError) return { error: relationshipsError.message };
+
+  const excludedIds = new Set<string>([user.id]);
+  for (const relationship of relationships ?? []) {
+    excludedIds.add(
+      relationship.requester_id === user.id
+        ? relationship.addressee_id
+        : relationship.requester_id
+    );
+  }
+
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id, username, avatar_url, bio, created_at")
+    .neq("id", user.id)
+    .order("created_at", { ascending: false })
+    .limit(limit * 4);
+
+  if (error) return { error: error.message };
+
+  const suggestions = (data as UserProfile[]).filter(
+    (profile) => !excludedIds.has(profile.id)
+  );
+
+  return { data: suggestions.slice(0, limit) };
+}
+
+export async function getBeerLogCounts(userIds: string[]) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Not authenticated" };
+
+  if (userIds.length === 0) return { data: {} as Record<string, number> };
+
+  const { data, error } = await supabase
+    .from("beer_entries")
+    .select("user_id")
+    .in("user_id", userIds);
+
+  if (error) return { error: error.message };
+
+  const counts: Record<string, number> = {};
+  for (const row of data ?? []) {
+    counts[row.user_id] = (counts[row.user_id] ?? 0) + 1;
+  }
+
+  return { data: counts };
+}
+
 export async function getFriendshipStatus(otherUserId: string): Promise<{ data?: FriendshipStatus; error?: string }> {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();

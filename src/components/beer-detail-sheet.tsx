@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import type { Beer, BeerEntry } from "@/lib/types/database";
 import StarRating from "./star-rating";
 import StarSlider from "./star-slider";
@@ -31,21 +31,7 @@ export default function BeerDetailSheet({
   onRatingChange,
 }: BeerDetailSheetProps) {
   const [personalScore, setPersonalScore] = useState(0);
-  const [imgSrc, setImgSrc] = useState<string | null>(null);
   const initialScore = ratings?.personalRating?.score ?? 0;
-
-  useEffect(() => {
-    if (!beer?.image_url) {
-      setImgSrc(null);
-      return;
-    }
-    let cancelled = false;
-    const img = new Image();
-    img.onload = () => { if (!cancelled) setImgSrc(beer.image_url); };
-    img.onerror = () => { if (!cancelled) setImgSrc(null); };
-    img.src = beer.image_url;
-    return () => { cancelled = true; };
-  }, [beer]);
 
   if (!beer) return null;
 
@@ -85,10 +71,10 @@ export default function BeerDetailSheet({
         <div className="flex p-5 gap-5">
           {/* Left: Can render (~40%) */}
           <div className="w-[38%] flex-shrink-0 flex items-center justify-center">
-            {imgSrc ? (
+            {beer.image_url ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
-                src={imgSrc}
+                src={beer.image_url}
                 alt={beer.name}
                 className="w-full h-auto object-contain max-h-56"
               />

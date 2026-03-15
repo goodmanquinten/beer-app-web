@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef } from "react";
+import { memo, useState, useEffect, useMemo, useRef } from "react";
 import type { Beer, BeerEntry } from "@/lib/types/database";
 import {
   DndContext,
@@ -18,6 +18,7 @@ import {
   SortableContext,
   useSortable,
   rectSortingStrategy,
+  arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 
@@ -242,21 +243,20 @@ export default function BeerShelf({
     const overSlot = slots[overIdx];
     if (activeSlot.type !== "beer") return;
 
+    const from = beerIds.indexOf(activeSlot.id);
+    if (from === -1) return;
+
     if (overSlot.type === "empty") {
-      const idx = beerIds.indexOf(activeSlot.id);
-      if (idx === -1) return;
       const newIds = [...beerIds];
-      newIds.splice(idx, 1);
+      newIds.splice(from, 1);
       newIds.splice(Math.min(overIdx, newIds.length), 0, activeSlot.id);
-      onArrangementChange?.(newIds);
-    } else {
-      const from = beerIds.indexOf(active.id as string);
-      const to = beerIds.indexOf(over.id as string);
-      if (from === -1 || to === -1) return;
-      const newIds = [...beerIds];
-      [newIds[from], newIds[to]] = [newIds[to], newIds[from]];
-      onArrangementChange?.(newIds);
+      onArrangementChange?.(Array.from(new Set(newIds)));
+      return;
     }
+
+    const to = beerIds.indexOf(over.id as string);
+    if (to === -1) return;
+    onArrangementChange?.(arrayMove(beerIds, from, to));
   }
 
   // The slot height determines the row height.
@@ -266,7 +266,6 @@ export default function BeerShelf({
   const slotHeight = config.canHeight + 4;
 
   // Empty slot visual dimensions (smaller, proportional)
-  const emptyW = Math.round(config.slotWidth * 0.65);
   const emptyH = Math.round(slotHeight * 0.45);
 
   return (
@@ -281,7 +280,6 @@ export default function BeerShelf({
       <SortableContext items={slots.map((s) => s.id)} strategy={rectSortingStrategy}>
         <div ref={containerRef}>
           {rows.map((row, rowIdx) => {
-            const hasAnyBeer = row.some((s) => s.type === "beer");
             return (
               <div key={rowIdx} className="relative overflow-visible" style={{ marginBottom: 18 }}>
                 {/* Can grid */}
@@ -299,11 +297,9 @@ export default function BeerShelf({
                       slot={slot}
                       slotHeight={slotHeight}
                       canHeight={config.canHeight}
-                      emptyW={emptyW}
                       emptyH={emptyH}
                       isActive={activeId === slot.id}
                       isOver={overId === slot.id}
-                      isGhostRow={!hasAnyBeer}
                       onSelectBeer={onSelectBeer}
                       onAddBeer={onAddBeer}
                     />
@@ -358,26 +354,22 @@ export default function BeerShelf({
 
 // ─── Shelf Slot ──────────────────────────────────────────────────────────────
 
-function ShelfSlot({
+const ShelfSlot = memo(function ShelfSlot({
   slot,
   slotHeight,
   canHeight,
-  emptyW,
   emptyH,
   isActive,
   isOver,
-  isGhostRow,
   onSelectBeer,
   onAddBeer,
 }: {
   slot: SlotItem;
   slotHeight: number;
   canHeight: number;
-  emptyW: number;
   emptyH: number;
   isActive: boolean;
   isOver: boolean;
-  isGhostRow: boolean;
   onSelectBeer: (beer: Beer, entries: BeerEntry[]) => void;
   onAddBeer?: () => void;
 }) {
@@ -441,6 +433,7 @@ function ShelfSlot({
       {...listeners}
     >
       <div
+        key={`${slot.beer.id}:${slot.beer.image_url ?? "no-image"}`}
         className={`beer-can-slot ${isActive ? "dragging" : ""}`}
         style={{ "--can-tilt": `${tilt}deg` } as React.CSSProperties}
         onClick={() => onSelectBeer(slot.beer, slot.entries)}
@@ -449,64 +442,60 @@ function ShelfSlot({
       </div>
     </div>
   );
-}
+});
 
 // ─── Beer Image ──────────────────────────────────────────────────────────────
 
-function BeerImage({ beer, canHeight }: { beer: Beer; canHeight: number }) {
-  // Probe image URLs with JS Image(), show badge until a working URL is confirmed
-  const [loadedSrc, setLoadedSrc] = useState<string | null>(null);
+const BeerImage = memo(function BeerImage({
+  beer,
+  canHeight,
+}: {
+  beer: Beer;
+  canHeight: number;
+}) {
+  // Track failed URLs so a broken image_url falls back to badge
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!beer.image_url) {
-      setLoadedSrc(null);
-      return;
-    }
-    let cancelled = false;
-    const img = new Image();
-    img.onload = () => { if (!cancelled) setLoadedSrc(beer.image_url); };
-    img.onerror = () => { if (!cancelled) setLoadedSrc(null); };
-    img.src = beer.image_url;
-    return () => { cancelled = true; };
-  }, [beer.id, beer.image_url]);
+  const showImage = beer.image_url && beer.image_url !== failedUrl;
 
   const badgeW = Math.round(canHeight * 0.45);
   const badgeH = Math.round(canHeight * 0.7);
   const fontSize = canHeight >= 96 ? 10 : canHeight >= 76 ? 9 : 8;
 
-  if (!loadedSrc) {
+  if (showImage) {
     return (
-      <div
-        className="rounded-sm flex items-center justify-center"
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={beer.image_url!}
+        alt={beer.name}
+        className="block pointer-events-none"
         style={{
-          width: badgeW,
-          height: badgeH,
-          background: "linear-gradient(180deg, #c4873a 0%, #a06830 50%, #7a4f25 100%)",
-          boxShadow: "0 2px 6px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.15)",
+          height: canHeight,
+          width: "auto",
+          objectFit: "contain",
         }}
-      >
-        <span
-          className="text-white/90 font-bold text-center leading-tight px-0.5 overflow-hidden"
-          style={{ fontSize }}
-        >
-          {beer.name.slice(0, 14)}
-        </span>
-      </div>
+        draggable={false}
+        onError={() => setFailedUrl(beer.image_url)}
+      />
     );
   }
 
   return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      src={loadedSrc}
-      alt={beer.name}
-      className="block pointer-events-none"
+    <div
+      className="rounded-sm flex items-center justify-center"
       style={{
-        height: canHeight,
-        width: "auto",
-        objectFit: "contain",
+        width: badgeW,
+        height: badgeH,
+        background: "linear-gradient(180deg, #c4873a 0%, #a06830 50%, #7a4f25 100%)",
+        boxShadow: "0 2px 6px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.15)",
       }}
-      draggable={false}
-    />
+    >
+      <span
+        className="text-white/90 font-bold text-center leading-tight px-0.5 overflow-hidden"
+        style={{ fontSize }}
+      >
+        {beer.name.slice(0, 14)}
+      </span>
+    </div>
   );
-}
+});

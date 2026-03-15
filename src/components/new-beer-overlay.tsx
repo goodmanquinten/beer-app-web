@@ -46,7 +46,7 @@ export default function NewBeerOverlay({
             />
           ) : (
             <div className="flex h-48 w-32 items-center justify-center rounded-2xl bg-gray-700 text-4xl">
-              🍺
+              {beer.container_type === "bottle" ? "🍾" : "🍺"}
             </div>
           )}
 
@@ -56,6 +56,9 @@ export default function NewBeerOverlay({
             {beer.brewery && (
               <p className="text-sm text-gray-400">{beer.brewery}</p>
             )}
+            <p className="text-xs uppercase tracking-wide text-gray-500">
+              {beer.container_type}
+            </p>
           </div>
 
           {/* Star slider */}
